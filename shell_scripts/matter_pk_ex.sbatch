@@ -9,16 +9,10 @@
 #SBATCH --mail-type=END,FAIL       # Email notifications
 #SBATCH --mail-user=turja.roy@uta.edu
 
-# Matter P(k) for the EX (extreme-feedback) set.
-#
-# Total-matter field: gas + DM + stars + BH. Feedback moves baryons, so this is
-# where AGN suppression at k >~ 1 h/Mpc actually shows. The tilt slope reported
-# per variant is the same statistic the 1P run uses to call a shape change
-# "Omega_0-like" -- a nonzero EX tilt means that discriminant is
-# feedback-contaminated.
-#
-# 4 sims x 10 snapshots. All four share Omega_m=0.3, sigma_8=0.8 and IC seed
-# 13560, so every difference here is feedback.
+# Matter P(k) for the EX set, total-matter field (gas + DM + stars + BH).
+# EX_0..EX_3 share cosmology and IC seed, so every difference is feedback.
+# A non-zero log slope of P_var/P_fid here means the same 1P statistic is
+# affected by feedback.
 
 # Load modules
 module load cmake

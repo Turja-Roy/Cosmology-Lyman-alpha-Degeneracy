@@ -7,7 +7,7 @@
 #SBATCH -n 12                      # Number of tasks (cores) - for MPI or workers
 #SBATCH -t 4:00:00                 # Time limit (4 hours)
 #SBATCH --mail-type=END,FAIL       # Email notifications (optional)
-#SBATCH --mail-user=$turja.roy@uta.edu  # Email address (update if needed)
+#SBATCH --mail-user=turja.roy@uta.edu
 
 # Load modules
 module load cmake

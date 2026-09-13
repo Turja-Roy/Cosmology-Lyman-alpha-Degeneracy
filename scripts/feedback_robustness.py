@@ -1,62 +1,24 @@
 """
-Feedback robustness of the Lyman-alpha observables (CSV-only).
+Does extreme feedback move an observable as much as cosmology does?
 
-Question: does extreme feedback move an observable as much as cosmology does?
-An observable that responds strongly to Omega_0 / sigma_8 but barely to feedback
-is a usable cosmology discriminant. One that moves as much under feedback is
-contaminated, and no amount of forest statistics will pull the cosmology back out.
+EX_0..EX_3 share cosmology (Omega_m = 0.3, sigma_8 = 0.8) and IC seed, and differ
+only in feedback: EX_0 fiducial, EX_1 A_AGN1 = 100, EX_2 A_SN1 = 100, EX_3 none.
 
-The CAMELS IllustrisTNG EX set is built for exactly this: four sims sharing one
-IC seed (13560) and one cosmology (Omega_m=0.3, sigma_8=0.8), differing only in
-feedback --
+Per observable and snapshot, the fractional spread (max - min) / |fiducial| over
+    S_fb   EX_0..EX_3
+    S_p1   1P_p1_n2..1P_p1_2   (Omega_0)
+    S_p2   1P_p2_n2..1P_p2_2   (sigma_8)
+and R = S_fb / S_p1, S_fb / S_p2. R < 1: cosmology moves it more than feedback.
 
-    EX_0  fiducial          EX_2  A_SN1  = 100  (extreme SN)
-    EX_1  A_AGN1 = 100      EX_3  all A  = 0    (no feedback)
+R compares two chosen parameter ranges, so it ranks observables; it is not an
+error bar. Spreads are only taken within one set, because EX and 1P use different
+IC seeds (for cosmic variance see cosmic_variance.py). A spread below the
+fiducial's own 1-sigma error is flagged upper_limit.
 
-Metric, per observable and per snapshot:
+EX_1 equals EX_0 at snaps 024 and 028: TNG's kinetic AGN mode is not active yet.
 
-    S_fb = (max - min over EX_0..EX_3)     / |EX_0|
-    S_p1 = (max - min over 1P_p1_n2..p1_2) / |1P_p1_0|      (Omega_0 scan)
-    S_p2 = (max - min over 1P_p2_n2..p2_2) / |1P_p2_0|      (sigma_8 scan)
-
-    R_p1 = S_fb / S_p1        R_p2 = S_fb / S_p2
-
-R < 1  -> feedback moves it less than the sampled cosmology range: robust.
-R > 1  -> feedback-dominated.
-
-THREE THINGS R IS NOT
----------------------
-1. R is RANGE-RELATIVE, not a likelihood. The 1P scan spans a chosen +-range and
-   EX spans a deliberately unphysical extreme (100x, and zero). R compares two
-   arbitrary lever arms. Use it to rank observables against each other, never as
-   a marginalized error.
-
-2. R is only meaningful because both spreads are computed WITHIN one set. EX
-   shares seed 13560; the 1P scans share seed 67. The seed cancels in each
-   spread. It does NOT cancel between sets: EX_0 and 1P_p1_0 have identical
-   cosmology and identical fiducial astrophysics yet their tau_eff differs by
-   3.2% at z=4 rising to 13.5% at z=0, purely from IC variance in a 25 Mpc/h box.
-   That offset is comparable to the largest feedback signal here, so this script
-   never forms an absolute EX/1P quantity -- only ratios of within-set spreads.
-
-3. A spread below the internal 1-sigma error is not a detection. Those points are
-   flagged `upper_limit` in the JSON and drawn as open markers.
-
-TNG's kinetic-mode AGN channel only switches on above ~1e8 Msun, and no black
-hole in this box crosses that until z~3. EX_1 is therefore bit-identical to EX_0
-at snaps 024 and 028 -- real physics, not a pipeline fault. The script counts
-distinct members per snapshot and annotates where it is 3 instead of 4, so a
-spread carried by two sims is never mistaken for one carried by four.
-
-Consumes only the per-snapshot CSVs that `analyze_spectra.py analyze` writes.
-Does not touch spectra or raw snapshots. Run:
-
-    python scripts/feedback_robustness.py \\
-        --ex-root output/analysis/IllustrisTNG/EX \\
-        --p1-root output/analysis/IllustrisTNG/1P \\
-        --cosmo-csv data/IllustrisTNG/1P/CosmoAstroSeed_IllustrisTNG_L25n256_1P.csv \\
-        --out-dir plots/ex_robustness
-
+Run:
+    python scripts/feedback_robustness.py --out-dir plots/ex_robustness
     python scripts/feedback_robustness.py --self-test
 """
 
@@ -70,7 +32,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# Same scripts/ dir, so a plain import works -- matches degeneracy_test.py.
 from hypothesis_test_p1 import load_snap_row, load_cosmo_table, _setup_style, _save
 from hypothesis_test_p1 import build_scan_frame, FIDUCIAL
 from degeneracy_test import (_obs_extractors, _obs_error_extractors,
@@ -95,15 +56,12 @@ SCAN_LABEL = {'p1': r'$\Omega_0$ scan', 'p2': r'$\sigma_8$ scan'}
 
 
 # =====================================================================
-# The metric
+# Arithmetic
 # =====================================================================
 
 def frac_spread(vals, fid_idx=0):
-    """(max - min) / |fiducial|, over the members of one set.
-
-    NaN if any member is missing: a hole would otherwise shrink the range and
-    make the set look more robust than it is. NaN, not inf, on a zero fiducial.
-    """
+    """(max - min) / |vals[fid_idx]|. NaN if any member is missing or the
+    fiducial is zero."""
     v = np.asarray(vals, dtype=float)
     if v.size == 0 or not np.all(np.isfinite(v)):
         return np.nan
@@ -114,26 +72,19 @@ def frac_spread(vals, fid_idx=0):
 
 
 def ratio(num, den):
-    """num/den, NaN-safe and never inf."""
+    """num / den, NaN instead of inf."""
     if not (np.isfinite(num) and np.isfinite(den)) or den == 0:
         return np.nan
     return float(num / den)
 
 
 def n_distinct(vals):
-    """How many members actually differ. Catches EX_1 == EX_0 at high z."""
     v = np.asarray(vals, dtype=float)
-    v = v[np.isfinite(v)]
-    return int(np.unique(v).size)
+    return int(np.unique(v[np.isfinite(v)]).size)
 
 
 def is_upper_limit(spread, fid_val, fid_err):
-    """True when the spread sits under the fiducial's own 1-sigma error.
-
-    compares the range against a single member's error rather than
-    propagating a max-minus-min error, which would need the member covariance.
-    Deliberately conservative -- it flags marginal points, it does not price them.
-    """
+    """Spread smaller than the fiducial's fractional 1-sigma error."""
     if not np.isfinite(spread):
         return False
     if not (np.isfinite(fid_val) and np.isfinite(fid_err)) or fid_val == 0:
@@ -142,46 +93,33 @@ def is_upper_limit(spread, fid_val, fid_err):
 
 
 # =====================================================================
-# Load the EX set into the same shape scan_record() returns for 1P
+# Loading
 # =====================================================================
+
+def _observables(rows):
+    return (
+        {n: np.array([fn(r) for r in rows], float)
+         for n, (fn, _l, _lg) in _obs_extractors().items()},
+        {n: np.array([fn(r) for r in rows], float)
+         for n, fn in _obs_error_extractors().items()},
+    )
+
 
 def ex_record(ex_root, snap):
     rows = [load_snap_row(Path(ex_root) / sim / snap) for sim in EX_SIMS]
-    extr, errs = _obs_extractors(), _obs_error_extractors()
-    return {
-        'snap': snap,
-        'sims': list(EX_SIMS),
-        'rows': rows,
-        'z': rows[EX_FID]['redshift'],
-        'obs': {n: np.array([fn(r) for r in rows], float)
-                for n, (fn, _l, _lg) in extr.items()},
-        'obs_err': {n: np.array([fn(r) for r in rows], float)
-                    for n, fn in errs.items()},
-    }
+    obs, err = _observables(rows)
+    return {'snap': snap, 'rows': rows, 'z': rows[EX_FID]['redshift'],
+            'obs': obs, 'obs_err': err}
 
 
 def cosmo_record(p1_root, cosmo, scan, snap):
-    """One 1P scan at one snapshot, in the same shape as ex_record().
-
-    Not degeneracy_test.scan_record, which returns the cosmology-scan shape
-    (Omega0/sigma8/S8 per row) this script has no use for. Numerator and
-    denominator go through the same extractors either way, which is what keeps
-    R meaningful.
-    """
+    """One 1P scan at one snapshot, in the same layout as ex_record."""
     rows = build_scan_frame(Path(p1_root), cosmo, scan, snap)
-    extr, errs = _obs_extractors(), _obs_error_extractors()
+    obs, err = _observables(rows)
     fid_idx = next((i for i, r in enumerate(rows) if r['suffix'] == FIDUCIAL), None)
-    return {
-        'scan': scan,
-        'snap': snap,
-        'rows': rows,
-        'fid_idx': fid_idx,
-        'z': rows[fid_idx]['redshift'] if fid_idx is not None else np.nan,
-        'obs': {n: np.array([fn(r) for r in rows], float)
-                for n, (fn, _l, _lg) in extr.items()},
-        'obs_err': {n: np.array([fn(r) for r in rows], float)
-                    for n, fn in errs.items()},
-    }
+    return {'scan': scan, 'snap': snap, 'rows': rows, 'fid_idx': fid_idx,
+            'z': rows[fid_idx]['redshift'] if fid_idx is not None else np.nan,
+            'obs': obs, 'obs_err': err}
 
 
 def build(ex_root, p1_root, cosmo_csv, snaps):
@@ -192,13 +130,8 @@ def build(ex_root, p1_root, cosmo_csv, snaps):
     return ex, cos
 
 
-def gate(ex, cos, snaps):
-    """Refuse to plot a half-synced grid.
-
-    A missing variant silently changes which two members set max - min, so the
-    lever arm stops being the same at every redshift. Same gate philosophy as
-    shell_scripts/make_comparison_plots.sh.
-    """
+def find_missing(ex, cos, snaps):
+    """Sim/snap dirs without tau_eff. A missing member would change max - min."""
     missing = []
     for s in snaps:
         for i, sim in enumerate(EX_SIMS):
@@ -211,16 +144,11 @@ def gate(ex, cos, snaps):
     return missing
 
 
-# =====================================================================
-# Reduce to the table everything else reads
-# =====================================================================
-
 def robustness_table(ex, cos, snaps):
-    extr = _obs_extractors()
     out = {'snaps': list(snaps),
            'z': [float(ex[s]['z']) for s in snaps],
            'observables': {}}
-    for name, (_fn, label, _log) in extr.items():
+    for name, (_fn, label, _log) in _obs_extractors().items():
         rec = {'label': label, 'S_fb': [], 'S_p1': [], 'S_p2': [],
                'R_p1': [], 'R_p2': [], 'n_distinct_ex': [], 'upper_limit': []}
         for s in snaps:
@@ -244,8 +172,19 @@ def robustness_table(ex, cos, snaps):
 # =====================================================================
 
 def _obs_style():
-    names = list(_obs_extractors())
-    return {n: (f'C{i}', 'os^vD<>p'[i % 8]) for i, n in enumerate(names)}
+    return {n: (f'C{i}', 'os^vD<>p'[i % 8]) for i, n in enumerate(_obs_extractors())}
+
+
+def _obs_grid(n):
+    ncol = 4
+    nrow = int(np.ceil(n / ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 3.4 * nrow),
+                             squeeze=False, sharex=True)
+    for ax in axes.ravel()[n:]:
+        ax.axis('off')
+    for ax in axes[-1]:
+        ax.set_xlabel('redshift')
+    return fig, axes
 
 
 def plot_robustness_ratio(tab, out_path):
@@ -255,9 +194,9 @@ def plot_robustness_ratio(tab, out_path):
     for ax, sc in zip(axes, COSMO_SCANS):
         for name, rec in tab['observables'].items():
             r = np.array(rec[f'R_{sc}'], float)
+            ul = np.array(rec['upper_limit'], bool)
             col, mk = style[name]
             ax.plot(z, r, '-', color=col, lw=1.2, alpha=0.8, zorder=2)
-            ul = np.array(rec['upper_limit'], bool)
             ax.plot(z[~ul], r[~ul], mk, color=col, ms=6, label=rec['label'], zorder=3)
             if ul.any():
                 ax.plot(z[ul], r[ul], mk, mfc='none', color=col, ms=6, zorder=3)
@@ -268,20 +207,16 @@ def plot_robustness_ratio(tab, out_path):
         ax.grid(alpha=0.3)
     axes[0].set_ylabel(r'$R = S_{\rm fb}\,/\,S_{\rm cosmo}$')
     axes[1].legend(loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
-    fig.suptitle('Below the dashed line: feedback moves it less than cosmology does.\n'
-                 'Open markers: spread under the internal 1$\\sigma$, treat as upper limits. '
-                 'R is range-relative, not a likelihood.', fontsize=9, y=1.06)
+    fig.suptitle('Below the dashed line feedback moves the observable less than cosmology.\n'
+                 'Open markers: spread below the 1$\\sigma$ error (upper limits).',
+                 fontsize=9, y=1.06)
     _save(fig, out_path)
 
 
 def plot_spreads(tab, out_path):
-    """The numerator and denominators behind R, so a surprising R is traceable."""
     z = np.array(tab['z'])
     names = list(tab['observables'])
-    ncol = 4
-    nrow = int(np.ceil(len(names) / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 3.4 * nrow),
-                             squeeze=False, sharex=True)
+    fig, axes = _obs_grid(len(names))
     for ax, name in zip(axes.ravel(), names):
         rec = tab['observables'][name]
         ax.plot(z, rec['S_fb'], 'ko-', ms=4, label=r'$S_{\rm fb}$ (EX)')
@@ -290,10 +225,6 @@ def plot_spreads(tab, out_path):
         ax.set_yscale('log')
         ax.set_title(rec['label'], fontsize=10)
         ax.grid(alpha=0.3)
-    for ax in axes.ravel()[len(names):]:
-        ax.axis('off')
-    for ax in axes[-1]:
-        ax.set_xlabel('redshift')
     for ax in axes[:, 0]:
         ax.set_ylabel('fractional spread')
     axes[0, 0].legend(fontsize=8, frameon=False)
@@ -301,39 +232,28 @@ def plot_spreads(tab, out_path):
 
 
 def plot_ex_observables(ex, tab, snaps, out_path):
-    """Each observable vs z, four sims overlaid, normalized to EX_0."""
+    """Each observable / EX_0 vs z, four sims overlaid."""
     names = list(tab['observables'])
     z = np.array(tab['z'])
-    ncol = 4
-    nrow = int(np.ceil(len(names) / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 3.4 * nrow),
-                             squeeze=False, sharex=True)
+    fig, axes = _obs_grid(len(names))
     for ax, name in zip(axes.ravel(), names):
-        rec = tab['observables'][name]
-        vals = np.array([ex[s]['obs'][name] for s in snaps], float)   # (nz, 4)
+        vals = np.array([ex[s]['obs'][name] for s in snaps], float)   # (n_snap, 4)
         with np.errstate(divide='ignore', invalid='ignore'):
             norm = vals / vals[:, EX_FID][:, None]
         for i, sim in enumerate(EX_SIMS):
             ax.plot(z, norm[:, i], 'o-', ms=4, color=EX_COLOR[sim],
                     label=EX_LABEL[sim] if name == names[0] else None)
         ax.axhline(1.0, color='k', ls=':', lw=0.8)
-        ax.set_title(rec['label'], fontsize=10)
+        ax.set_title(tab['observables'][name]['label'], fontsize=10)
         ax.grid(alpha=0.3)
-    for ax in axes.ravel()[len(names):]:
-        ax.axis('off')
-    for ax in axes[-1]:
-        ax.set_xlabel('redshift')
     for ax in axes[:, 0]:
         ax.set_ylabel('value / EX_0')
     axes[0, 0].legend(fontsize=8, frameon=False)
-    # One statement for the whole figure: it is the same snapshots in every panel.
-    deg = sorted({s for rec in tab['observables'].values()
-                  for s, n in zip(snaps, rec['n_distinct_ex']) if n < len(EX_SIMS)})
-    if deg:
-        fig.suptitle('EX_1 is bit-identical to EX_0 at ' + ', '.join(deg) +
-                     ' (TNG kinetic AGN inactive below ~$10^8\\,M_\\odot$), '
-                     'so the spread there is carried by EX_2 and EX_3 alone.',
-                     fontsize=9, y=1.02)
+    same = sorted({s for rec in tab['observables'].values()
+                   for s, n in zip(snaps, rec['n_distinct_ex']) if n < len(EX_SIMS)})
+    if same:
+        fig.suptitle('EX_1 = EX_0 at ' + ', '.join(same) +
+                     ' (kinetic AGN feedback not yet active)', fontsize=9, y=1.02)
     _save(fig, out_path)
 
 
@@ -349,8 +269,7 @@ def plot_cddf_grid(ex, snaps, out_path):
             if c is None:
                 continue
             m = c['f_N_HI'] > 0
-            ax.plot(c['log10_N_HI'][m], c['f_N_HI'][m], '-',
-                    color=EX_COLOR[sim], lw=1.3,
+            ax.plot(c['log10_N_HI'][m], c['f_N_HI'][m], '-', color=EX_COLOR[sim], lw=1.3,
                     label=EX_LABEL[sim] if snap == snaps[0] else None)
         ax.set_yscale('log')
         ax.set_title(f"{snap}  (z = {rec['z']:.2f})", fontsize=10)
@@ -366,68 +285,47 @@ def plot_cddf_grid(ex, snaps, out_path):
 
 
 # =====================================================================
-# Self-test
-# =====================================================================
 
 def self_test():
-    # equal spreads -> R == 1
     assert ratio(frac_spread([1.0, 1.0, 1.2, 0.8]),
                  frac_spread([2.0, 2.0, 2.4, 1.6])) == 1.0
 
-    # normalized by the FIDUCIAL member, not the mean or the max
+    # normalised by the fiducial member, not the mean
     assert abs(frac_spread([2.0, 3.0, 1.0], fid_idx=0) - 1.0) < 1e-12
     assert abs(frac_spread([2.0, 3.0, 1.0], fid_idx=1) - 2.0 / 3.0) < 1e-12
 
-    # a missing member yields NaN rather than a quietly narrower range
     assert np.isnan(frac_spread([1.0, np.nan, 1.5, 0.5]))
-
-    # zero fiducial -> NaN, never inf
     assert np.isnan(frac_spread([0.0, 1.0, 2.0]))
     assert np.isnan(ratio(1.0, 0.0))
     assert np.isnan(ratio(np.nan, 1.0))
 
-    # EX_1 == EX_0 must show up as 3 distinct members, not 4
     assert n_distinct([1.0, 1.0, 2.0, 3.0]) == 3
     assert n_distinct([1.0, 2.0, 3.0, 4.0]) == 4
 
-    # spread under the fiducial 1-sigma is an upper limit; above it is not
     assert is_upper_limit(0.01, 1.0, 0.05)
     assert not is_upper_limit(0.10, 1.0, 0.05)
     assert not is_upper_limit(np.nan, 1.0, 0.05)
     assert not is_upper_limit(0.01, 1.0, np.nan)
 
-    # the real z=0 tau_eff numbers from the 2026-08-24 EX run
-    ex0, ex1, ex2, ex3 = 0.0275900, 0.0261500, 0.0299493, 0.0258625
-    assert abs(frac_spread([ex0, ex1, ex2, ex3]) - 0.148) < 0.002
+    # z = 0 tau_eff from the 2026-08-24 EX run
+    assert abs(frac_spread([0.0275900, 0.0261500, 0.0299493, 0.0258625]) - 0.148) < 0.002
 
-    # the CDDF anchors must be inside the production grid: the first bin
-    # centre is 13.111, and cddf_value refuses to extrapolate below it, so an
-    # anchor at or under that silently NaNs cddf_lowN and cddf_slope
-    assert CDDF_LOWN > 13.111, 'low-N anchor must clear the first bin centre'
-    assert CDDF_HIGHN > CDDF_LOWN
-
-    # numerator and denominator must use the SAME extractor set -- a mismatch
-    # between EX and 1P silently NaNs every CDDF ratio
+    # cddf_value does not extrapolate below the first bin centre (13.111)
+    assert CDDF_HIGHN > CDDF_LOWN > 13.111
     assert _obs_extractors().keys() == _obs_error_extractors().keys()
 
     print('self-test OK')
 
 
-# =====================================================================
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
-    ap.add_argument('--ex-root', type=Path,
-                    default=Path('output/analysis/IllustrisTNG/EX'))
-    ap.add_argument('--p1-root', type=Path,
-                    default=Path('output/analysis/IllustrisTNG/1P'))
+    ap.add_argument('--ex-root', type=Path, default=Path('output/analysis/IllustrisTNG/EX'))
+    ap.add_argument('--p1-root', type=Path, default=Path('output/analysis/IllustrisTNG/1P'))
     ap.add_argument('--cosmo-csv', type=Path,
-                    default=Path('data/IllustrisTNG/1P/'
-                                 'CosmoAstroSeed_IllustrisTNG_L25n256_1P.csv'))
+                    default=Path('data/IllustrisTNG/1P/CosmoAstroSeed_IllustrisTNG_L25n256_1P.csv'))
     ap.add_argument('--snaps', default=','.join(DEFAULT_SNAPS))
     ap.add_argument('--out-dir', type=Path, default=Path('plots/ex_robustness'))
-    ap.add_argument('--self-test', action='store_true',
-                    help='check the spread arithmetic and exit')
+    ap.add_argument('--self-test', action='store_true')
     args = ap.parse_args()
 
     if args.self_test:
@@ -435,24 +333,17 @@ def main():
         return 0
 
     snaps = [s.strip() for s in args.snaps.split(',') if s.strip()]
-    print(f'EX   root: {args.ex_root}')
-    print(f'1P   root: {args.p1_root}')
-    print(f'snapshots: {len(snaps)}')
-
     ex, cos = build(args.ex_root, args.p1_root, args.cosmo_csv, snaps)
 
-    missing = gate(ex, cos, snaps)
+    missing = find_missing(ex, cos, snaps)
     if missing:
-        print(f'\n{len(missing)} incomplete variant/snap dirs:')
+        print(f'{len(missing)} sim/snap dirs missing:')
         for m in missing[:20]:
-            print(f'  MISSING {m}')
+            print(f'  {m}')
         if len(missing) > 20:
             print(f'  ... and {len(missing) - 20} more')
-        print('\nA hole changes which two members set max - min, so the lever arm\n'
-              'stops being the same at every redshift. Sync /work down first.')
         return 1
-    print(f'grid complete: {len(EX_SIMS)} EX + {5 * len(COSMO_SCANS)} 1P '
-          f'x {len(snaps)} snapshots')
+    print(f'complete: {len(EX_SIMS)} EX + {5 * len(COSMO_SCANS)} 1P x {len(snaps)} snapshots')
 
     tab = robustness_table(ex, cos, snaps)
 
@@ -462,32 +353,24 @@ def main():
     plot_spreads(tab, args.out_dir / 'spreads_vs_z.png')
     plot_ex_observables(ex, tab, snaps, args.out_dir / 'ex_observables_vs_z.png')
     plot_cddf_grid(ex, snaps, args.out_dir / 'ex_cddf_grid.png')
-
     jpath = args.out_dir / 'robustness.json'
     jpath.write_text(json.dumps(tab, indent=2, default=float))
     print(f'  saved {jpath}')
 
-    # Rank observables by their worst-case R across redshift: the number to read.
-    # Upper-limit points are excluded -- an R built from a spread that never
-    # cleared the noise says nothing about robustness, and including it would
-    # rank an unmeasurable observable as the safest one on the list.
-    print('\nWorst-case R over measured snapshots (lower = more cosmology-robust):')
+    # Largest R over snapshots, ignoring upper limits.
+    print('\nLargest R over measured snapshots (lower = less affected by feedback):')
     rank = []
     for name, rec in tab['observables'].items():
         ul = np.array(rec['upper_limit'], bool)
-        r = np.array(rec['R_p1'], float)[~ul]
-        r2 = np.array(rec['R_p2'], float)[~ul]
-        r = np.concatenate([r, r2])
+        r = np.concatenate([np.array(rec['R_p1'], float)[~ul], np.array(rec['R_p2'], float)[~ul]])
         r = r[np.isfinite(r)]
         rank.append((r.max() if r.size else np.nan, int((~ul).sum()), name))
     for worst, n_meas, name in sorted(rank, key=lambda t: (np.isnan(t[0]), t[0])):
         if not np.isfinite(worst):
-            print(f'  {name:12s} R_max =      n/a   '
-                  f'no measured snapshot (all {len(snaps)} under the 1-sigma floor)')
+            print(f'  {name:12s} R_max =      n/a   (all snapshots are upper limits)')
         else:
-            flag = 'robust' if worst < 1 else 'feedback-contaminated'
-            print(f'  {name:12s} R_max = {worst:8.3f}   {flag}'
-                  f'   ({n_meas}/{len(snaps)} snapshots measured)')
+            tag = 'robust' if worst < 1 else 'feedback-dominated'
+            print(f'  {name:12s} R_max = {worst:8.3f}   {tag}   ({n_meas}/{len(snaps)} measured)')
     return 0
 
 

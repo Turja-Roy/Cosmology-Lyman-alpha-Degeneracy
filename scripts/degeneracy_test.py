@@ -1,84 +1,18 @@
 """
-Omega_0 -- sigma_8 degeneracy test (CSV-only).
+Omega_0 vs sigma_8 degeneracy tests on the per-snapshot analysis CSVs.
 
-Goal: find observables that tell Omega_0 (the p1 scan) and sigma_8 (the p2 scan)
-apart, given that both raise the matter-fluctuation amplitude and therefore move
-most one-point statistics together along
+Both parameters raise the clustering amplitude, so most forest statistics depend
+on them only through S_8 = sigma_8 * sqrt(Omega_m / 0.3). Each test asks whether
+an observable separates the p1 (Omega_0) and p2 (sigma_8) scans at fixed S_8.
 
-    S_8 = sigma_8 * sqrt(Omega_m / 0.3).
-
-READ THIS BEFORE TRUSTING ANY NUMBER OUT OF THIS SCRIPT
--------------------------------------------------------
-1. The two scans do NOT span the same lever arm. p1 sweeps Omega_0 = 0.1..0.5 at
-   sigma_8 = 0.8, so S_8 = 0.462..1.033 (range 0.571). p2 sweeps sigma_8 =
-   0.6..1.0 at Omega_0 = 0.3, so S_8 = 0.600..1.000 (range 0.400). Comparing the
-   raw spread of an observable across p1 against its spread across p2 credits
-   Omega_0 with a 1.43x longer ruler and manufactures a discriminant out of
-   nothing. Only the S_8-space split below is a fair comparison: it normalises
-   each scan to its own fiducial and measures the gap between the two tracks at
-   MATCHED S_8. Never quote a raw p1/p2 spread ratio as evidence.
-
-2. Nothing here is compared to a noise floor. Changing only the IC seed at fixed
-   cosmology (EX_0 vs 1P_p1_0, same parameters, seeds 13560 vs 67) moves tau_eff
-   by 3.2% at z=4 rising to 13.5% at z=0, and moves the mean-flux evolution index
-   by 1.2%. Most split scores this script reports are 0.02-0.26, i.e. the same
-   order. Until the CAMELS CV set (27 seeds at fiducial parameters) is run
-   through the same pipeline, treat every split as a candidate, not a detection.
-
-3. k_eq ~ 0.015 h/Mpc is ~17x below the 25 Mpc/h box fundamental mode
-   (2*pi/25 = 0.25 h/Mpc). No test here touches the LINEAR power-spectrum shape;
-   the scale split measures nonlinear transfer only.
-
-The tests
----------
-  S_8 collapse test (the master diagnostic)
-      Each observable, normalised to its own fiducial, plotted against S_8 for
-      both scans. Overlapping tracks => the observable is a function of S_8 alone
-      => degenerate. The reported split is the RMS gap between the tracks on a
-      shared S_8 grid, and it is the only fair scalar in this script.
-
-  Path-length geometry test
-      Omega_0 enters dX/dz = (1+z)^2 / E(z); sigma_8 does not (Omega_m is held at
-      0.3 across p2, so its dX/dz ratio is identically 1). Requires a scan that
-      actually varies Omega_0 -- it is skipped otherwise, because on a
-      fixed-Omega_0 set it can only draw a flat line at 1.0.
-
-  Flux-power scale split
-      k_eq ~ Omega_m h^2 tilts the shape of P_F(k) while sigma_8 lifts every mode
-      equally, so the small/large band ratio should slope with Omega_0 and stay
-      flat with sigma_8. Best-performing single-snapshot discriminant at z ~ 2
-      (split 0.26), but feedback-dominated by z ~ 0.3 -- see
-      feedback_robustness.py before using it at low z. The slope is only fitted
-      for scans whose parameter is a real number; on a categorical set (EX) the
-      x-axis is an arbitrary ordinal and the slope is meaningless.
-
-  Evolution-index test
-      f = dlnD/dlna ~ Omega_m^0.55, so the growth history differs between models
-      matched at one epoch. DEMOTED: fitted as a power law d ln(obs) / d ln(1+z)
-      -- the physically correct form for the forest -- every variant returns
-      2.28..2.41 and the S_8-space split is 0.021 for the mean flux, SMALLER than
-      the plain amplitude statistics this test was supposed to beat. The earlier
-      "38% vs 7%" result came from a straight-line fit to a quantity spanning
-      three decades, which is endpoint-dominated and changes with the snapshot
-      list. Kept because it is an excellent null test: feedback moves it 0.9%.
-
-  Observable-pair map
-      One observable against another, parametrically. Non-collinear p1 and p2
-      tracks mean the PAIR pins a measurement down even where either coordinate
-      alone is degenerate. Add the EX track to see whether feedback moves the
-      pair in a direction distinguishable from cosmology.
-
-Dropped, and why:
-  * Doppler-b response. line_width.cpp clamps b to [2, 80] km/s and 99.4% of the
-    measured values at z=4 sit exactly at the 80 ceiling, so the median carried
-    no information. Restore once the deblender is fixed.
-  * Thermal-state panel figure. Its T_0 content duplicated the thermal-trend plot
-    in hypothesis_test_p1.py, which has error bars and gamma; its only unique
-    panel was the clamped b one.
-
-Consumes only the per-variant CSVs that `analyze` already writes (cddf.csv,
-flux_stats.csv, power_spectrum.csv, temp_density.csv). Reuses the loaders and
-cosmology helpers from hypothesis_test_p1.py.
+Caveats:
+- p1 spans S_8 = 0.46-1.03 and p2 only 0.60-1.00, so the scans are compared at
+  matched S_8 (_matched_s8_gap), never by their raw spreads.
+- The 25 Mpc/h box (k_min = 0.25 h/Mpc) has no modes near k_eq ~ 0.015 h/Mpc,
+  so nothing here probes the linear power-spectrum shape.
+- Whether a gap exceeds cosmic variance is checked in cosmic_variance.py.
+- Doppler b is not used: line_width.cpp caps b at 80 km/s, where most z >= 3
+  lines sit.
 
 Run:
     python scripts/degeneracy_test.py \\
@@ -86,9 +20,7 @@ Run:
         --ex-root       output/analysis/IllustrisTNG/EX \\
         --cosmo-csv data/IllustrisTNG/1P/CosmoAstroSeed_IllustrisTNG_L25n256_1P.csv \\
                     data/IllustrisTNG/EX/CosmoAstroSeed_IllustrisTNG_L25n256_EX.txt \\
-        --scans p1,p2,ex \\
-        --snaps snap-080,snap-044 \\
-        --out-dir plots/degeneracy_test
+        --scans p1,p2,ex --snaps snap-080,snap-044 --out-dir plots/degeneracy_test
 """
 
 import argparse
@@ -100,7 +32,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Shared loaders live in hypothesis_test_p1.py (same scripts/ dir, plain import).
 from hypothesis_test_p1 import (
     SCANS, FIDUCIAL, members,
     build_scan_frame, load_cosmo_table,
@@ -108,37 +39,30 @@ from hypothesis_test_p1 import (
     _setup_style, _save,
 )
 
-# Two scans under test. p1 varies Omega_0 (sigma_8 fixed 0.8);
-# p2 varies sigma_8 (Omega_0 fixed 0.3). Fiducial of both: Omega_0=0.3, sigma_8=0.8.
 DEGEN_SCANS = ['p1', 'p2']
-SCAN_COLOR  = {'p1': 'C0', 'p2': 'C3', 'ex': 'C2',   # Omega_0 blue, sigma_8 red, feedback green
+SCAN_COLOR  = {'p1': 'C0', 'p2': 'C3', 'ex': 'C2',
                'p7': 'C4', 'p8': 'C5', 'p9': 'C6'}
 SCAN_MARKER = {'p1': 'o',  'p2': 's',  'ex': '^',
                'p7': 'v',  'p8': 'D',  'p9': 'P'}
-S8_FID = 0.8 * np.sqrt(0.3 / 0.3)           # fiducial S_8 = 0.8
+S8_FID = 0.8
 
-# The S_8 collapse split is a gap BETWEEN these two scans; with only one of them
-# selected there is nothing to compare and the score is simply not defined.
+# The matched-S_8 gap is defined only between these two scans.
 COSMO_PAIR = {'p1', 'p2'}
 
 
 def varies_omega0(rec):
-    """True if this scan actually moves Omega_0. The path-length test divides
-    dX/dz by its fiducial, so on a fixed-Omega_0 set it can only ever draw 1.0."""
     om = np.asarray(rec['Omega0'], float)
     om = om[np.isfinite(om)]
     return om.size > 1 and not np.allclose(om, om[0])
 
 
 def has_numeric_param(scan):
-    """False for a categorical set such as EX, whose 'parameter' is a 1-based
-    ordinal over sim names. Fitting a slope against that ordering is meaningless
-    -- it measures the order the sims happen to be listed in."""
+    """False for EX, whose x-axis is only the order of the sims."""
     return SCANS[scan].get('column') is not None
 
 
 # =====================================================================
-# Per-variant scalar observables
+# Scalar observables per variant
 # =====================================================================
 
 def _trapz(y, x):
@@ -147,15 +71,12 @@ def _trapz(y, x):
 
 
 def scale_split_ratio(ps, k_large_max=0.01, k_small_min=0.05):
-    """Return (large_integral, small_integral, small/large ratio) of k*P_F(k).
-
-    The ratio is the shape discriminant: Omega_0 tilts it (via k_eq), sigma_8
-    should leave it ~flat (uniform amplitude rescaling cancels in the ratio)."""
+    """Integrals of k*P_F(k) over k <= k_large_max and k >= k_small_min [s/km],
+    and their ratio small/large. The ratio ignores an overall amplitude change."""
     if ps is None:
         return np.nan, np.nan, np.nan
     k = ps['k_s_per_km'].values
-    P = ps['P_k_mean_km_per_s'].values
-    kP = k * P
+    kP = k * ps['P_k_mean_km_per_s'].values
     mL = (k > 0) & (k <= k_large_max)
     mS = k >= k_small_min
     L = _trapz(kP[mL], k[mL]) if mL.sum() > 1 else np.nan
@@ -169,7 +90,7 @@ CDDF_HIGHN = 15.0
 
 
 def cddf_value(cddf, logN_ref):
-    """f(N_HI) interpolated (log-log) at a reference column density."""
+    """f(N_HI) at log N = logN_ref, interpolated in log-log. No extrapolation."""
     if cddf is None:
         return np.nan
     m = cddf['f_N_HI'] > 0
@@ -181,8 +102,7 @@ def cddf_value(cddf, logN_ref):
 
 
 def cddf_slope(cddf, logN_lo=CDDF_LOWN, logN_hi=CDDF_HIGHN):
-    """Log-log slope of the CDDF between two columns. Low-N slope tracks the
-    density-PDF shape; the high-N anchor tracks the halo-MF tail."""
+    """d log f / d log N between two column densities."""
     flo = cddf_value(cddf, logN_lo)
     fhi = cddf_value(cddf, logN_hi)
     if not (np.isfinite(flo) and np.isfinite(fhi) and flo > 0 and fhi > 0):
@@ -191,8 +111,7 @@ def cddf_slope(cddf, logN_lo=CDDF_LOWN, logN_hi=CDDF_HIGHN):
 
 
 def cddf_value_err(cddf, logN_ref):
-    """Poisson error on f(N_HI) at a reference column, taken from the nearest bin
-    rather than interpolated."""
+    """Poisson error on f(N_HI) from the nearest bin."""
     if cddf is None:
         return np.nan
     m = cddf['f_N_HI'] > 0
@@ -213,20 +132,19 @@ def cddf_value_err(cddf, logN_ref):
 
 
 def cddf_slope_err(cddf, logN_lo=CDDF_LOWN, logN_hi=CDDF_HIGHN):
-    """Error on the two-point log-log slope, propagated from the two endpoints."""
     flo, fhi = cddf_value(cddf, logN_lo), cddf_value(cddf, logN_hi)
     elo, ehi = cddf_value_err(cddf, logN_lo), cddf_value_err(cddf, logN_hi)
     if not all(np.isfinite(v) and v > 0 for v in (flo, fhi)):
         return np.nan
     if not (np.isfinite(elo) and np.isfinite(ehi)):
         return np.nan
-    # d(log10 f) = (1/ln10) df/f
+    # d(log10 f) = df / (f ln 10)
     s_lo = elo / flo / np.log(10.0)
     s_hi = ehi / fhi / np.log(10.0)
     return float(np.sqrt(s_lo ** 2 + s_hi ** 2) / (logN_hi - logN_lo))
 
 
-# observable name -> (extractor(row), pretty label, prefer-log-y)
+# name -> (extractor(row), axis label, log y-axis)
 def _obs_extractors():
     return {
         'tau_eff':    (lambda r: r['tau_eff'],                         r'$\tau_{\rm eff}$',                False),
@@ -239,9 +157,8 @@ def _obs_extractors():
     }
 
 
-# 1-sigma errors, all internal to one box (sightline scatter, Poisson counting).
-# power_ratio has none: propagating P_k_err through two band integrals needs the
-# k-mode covariance, which is not stored.
+# 1-sigma errors from within one box (sightline scatter, Poisson counts).
+# power_ratio has none: it would need the k-mode covariance, which is not stored.
 def _obs_error_extractors():
     return {
         'tau_eff':    lambda r: r.get('tau_eff_err', np.nan),
@@ -255,7 +172,7 @@ def _obs_error_extractors():
 
 
 # =====================================================================
-# Assemble a scan record (both cosmo params + observables) for one snap
+# One scan at one snapshot
 # =====================================================================
 
 def _S8(omega0, sigma8):
@@ -263,7 +180,7 @@ def _S8(omega0, sigma8):
 
 
 def scan_record(analysis_root, cosmo, scan, snap):
-    """build_scan_frame + attach Omega_0, sigma_8, S_8 and the scalar obs arrays."""
+    """Rows of one scan plus Omega_0, sigma_8, S_8 and observable arrays."""
     rows = build_scan_frame(analysis_root, cosmo, scan, snap)
     for r in rows:
         lab = r['label']
@@ -271,7 +188,6 @@ def scan_record(analysis_root, cosmo, scan, snap):
         s8 = cosmo.loc[lab, 'sigma8'] if lab in cosmo.index else np.nan
         r['Omega0'], r['sigma8'], r['S8'] = om, s8, _S8(om, s8)
 
-    extr = _obs_extractors()
     rec = {
         'scan': scan, 'snap': snap, 'rows': rows,
         'Omega0': np.array([r['Omega0'] for r in rows], float),
@@ -279,14 +195,13 @@ def scan_record(analysis_root, cosmo, scan, snap):
         'S8':     np.array([r['S8']     for r in rows], float),
         'param':  np.array([r['param_value'] for r in rows], float),
         'obs':    {name: np.array([fn(r) for r in rows], float)
-                   for name, (fn, _lbl, _lg) in extr.items()},
+                   for name, (fn, _lbl, _lg) in _obs_extractors().items()},
         'obs_err': {name: np.array([fn(r) for r in rows], float)
                     for name, fn in _obs_error_extractors().items()},
     }
-    fid = next((r for r in rows if r['suffix'] == FIDUCIAL), None)
-    rec['z'] = fid['redshift'] if fid is not None else np.nan
     rec['fid_idx'] = next((i for i, r in enumerate(rows)
                            if r['suffix'] == FIDUCIAL), None)
+    rec['z'] = rows[rec['fid_idx']]['redshift'] if rec['fid_idx'] is not None else np.nan
     return rec
 
 
@@ -297,31 +212,22 @@ def _norm_to_fid(arr, fid_idx):
 
 
 def _norm_err_to_fid(arr, err, fid_idx):
-    """Error on arr/arr[fid], including the fiducial's own error so that point does
-    not come out exact."""
+    """Error on arr / arr[fid], including the fiducial's own error."""
     if fid_idx is None or err is None:
         return None
     with np.errstate(divide='ignore', invalid='ignore'):
         v_fid, e_fid = arr[fid_idx], err[fid_idx]
         if not np.isfinite(v_fid) or v_fid == 0:
             return None
-        rel = err / arr
-        rel_fid = e_fid / v_fid
-        out = np.abs(arr / v_fid) * np.sqrt(rel ** 2 + rel_fid ** 2)
+        out = np.abs(arr / v_fid) * np.sqrt((err / arr) ** 2 + (e_fid / v_fid) ** 2)
     return out if np.any(np.isfinite(out)) else None
 
 
-# =====================================================================
-# S_8 collapse test -- S_8 collapse test (master diagnostic)
-# =====================================================================
-
 def _matched_s8_gap(curves):
-    """RMS gap between the p2 and p1 tracks interpolated onto a shared S_8 grid.
+    """RMS difference between the p1 and p2 curves on their common S_8 range.
 
-    Comparing at MATCHED S_8 is what makes this fair -- the two scans span
-    different S_8 ranges (0.571 vs 0.400), so a raw spread ratio would credit
-    Omega_0 with the longer ruler. `curves` maps scan -> (S_8, obs/fid).
-    Returns NaN when either track is missing or too short to interpolate.
+    curves: scan -> (S_8, obs / obs_fid). NaN if either scan is missing or has
+    fewer than two finite points.
     """
     if not COSMO_PAIR.issubset(curves):
         return np.nan
@@ -338,37 +244,34 @@ def _matched_s8_gap(curves):
     return float(np.sqrt(np.mean((g2 - g1) ** 2)))
 
 
+# =====================================================================
+# Single-snapshot figures. `records` maps scan -> scan_record.
+# =====================================================================
+
 def s8_collapse_test(records, out_path, snap_label):
-    """Each observable vs S_8 for p1 and p2, normalized to fiducial. Overlap =
-    degenerate (function of S_8 only); separation = degeneracy broken."""
+    """Each observable / fiducial vs S_8. Overlapping scans = degenerate."""
     extr = _obs_extractors()
-    names = list(extr.keys())
+    names = list(extr)
     ncols = 4
     nrows = int(np.ceil(len(names) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(4.4 * ncols, 3.6 * nrows),
                              squeeze=False)
     flat = list(axes.ravel())
 
-    split_score = {}
+    gaps = {}
     for ax, name in zip(flat, names):
         _, lbl, logy = extr[name]
         curves = {}
-        for scan in DEGEN_SCANS:
-            rec = records[scan]
+        for scan, rec in records.items():
             y = _norm_to_fid(rec['obs'][name], rec['fid_idx'])
-            yerr = _norm_err_to_fid(rec['obs'][name],
-                                    rec.get('obs_err', {}).get(name),
-                                    rec['fid_idx'])
-            x = rec['S8']
-            # The split score below is only meaningful if the p1/p2 separation
-            # exceeds these bars.
-            ax.errorbar(x, y, yerr=yerr, fmt=SCAN_MARKER[scan] + '-',
+            yerr = _norm_err_to_fid(rec['obs'][name], rec['obs_err'][name], rec['fid_idx'])
+            ax.errorbar(rec['S8'], y, yerr=yerr, fmt=SCAN_MARKER[scan] + '-',
                         color=SCAN_COLOR[scan], lw=1.8, ms=6, capsize=3,
                         label=f'{scan} ({SCANS[scan]["label"]})')
-            curves[scan] = (x, y)
+            curves[scan] = (rec['S8'], y)
         gap = _matched_s8_gap(curves)
         if np.isfinite(gap):
-            split_score[name] = gap
+            gaps[name] = gap
 
         ax.axvline(S8_FID, color='gray', lw=0.8, ls=':')
         ax.axhline(1.0,    color='gray', lw=0.8, ls=':')
@@ -376,177 +279,128 @@ def s8_collapse_test(records, out_path, snap_label):
             ax.set_yscale('log')
         ax.set_xlabel(r'$S_8 = \sigma_8\sqrt{\Omega_m/0.3}$')
         ax.set_ylabel(lbl + ' / fid')
-        sc = split_score.get(name, np.nan)
-        tag = f'  (split={sc:.3f})' if np.isfinite(sc) else ''
-        ax.set_title(name + tag, fontsize=10)
+        ax.set_title(name + (f'  (gap={gap:.3f})' if np.isfinite(gap) else ''), fontsize=10)
         ax.grid(alpha=0.3, which='both')
     for ax in flat[len(names):]:
         ax.axis('off')
     flat[0].legend(fontsize=9, loc='best')
-    fig.suptitle(f'S_8 collapse test -- $S_8$ collapse test: degenerate observables overlap '
-                 f'({snap_label})', fontsize=13)
+    fig.suptitle(f'Observables vs $S_8$: overlapping scans are degenerate ({snap_label})',
+                 fontsize=13)
     fig.tight_layout()
     _save(fig, out_path)
-    return split_score
+    return gaps
 
-
-# =====================================================================
-# Path-length geometry test -- geometric path length dX/dz
-# =====================================================================
 
 def path_length_geometry_test(records, out_path, snap_label):
-    """Left: dX/dz ratio vs parameter (p2 is flat by construction).
-    Right: CDDF before/after the dX correction for p1 vs p2 -- only p1 moves.
-
-    Skipped unless some selected scan actually varies Omega_0. On a set that
-    holds it fixed (p2 alone, or EX) every point is dX/dz over its own fiducial
-    = 1.0 exactly, and the figure asserts "only Omega_0 moves it" over a flat
-    line -- a guaranteed null dressed as a result.
-    """
-    if not any(varies_omega0(records[s]) for s in DEGEN_SCANS):
-        print('  [path-length geometry] no selected scan varies Omega_0 -- skipping')
+    """Left: dX/dz / fiducial per scan. Right: spread of the low-N CDDF amplitude
+    before and after dividing out dX/dz. Skipped if no scan varies Omega_0."""
+    if not any(varies_omega0(rec) for rec in records.values()):
+        print('  [path-length] no selected scan varies Omega_0 -- skipping')
         return
     fig, (axL, axR) = plt.subplots(1, 2, figsize=(13, 5))
 
-    for scan in DEGEN_SCANS:
-        rec = records[scan]
-        z = rec['z']
-        fid_idx = rec['fid_idx']
+    for scan, rec in records.items():
+        z, fid_idx = rec['z'], rec['fid_idx']
         if fid_idx is None or not np.isfinite(z):
             continue
-        om = rec['Omega0']
-        dX = np.array([dXdz(z, o) if np.isfinite(o) else np.nan for o in om])
-        dX_ratio = dX / dX[fid_idx]
-        axL.plot(rec['param'] / rec['param'][fid_idx], dX_ratio,
+        dX = np.array([dXdz(z, o) if np.isfinite(o) else np.nan for o in rec['Omega0']])
+        axL.plot(rec['param'] / rec['param'][fid_idx], dX / dX[fid_idx],
                  SCAN_MARKER[scan] + '-', color=SCAN_COLOR[scan], lw=2, ms=7,
                  label=f'{scan} ({SCANS[scan]["label"]})')
-
     axL.axhline(1.0, color='gray', lw=0.8, ls=':')
     axL.axvline(1.0, color='gray', lw=0.8, ls=':')
     axL.set_xlabel('parameter / fiducial')
     axL.set_ylabel(r'$dX/dz \,/\, (dX/dz)_{\rm fid}$')
-    axL.set_title(r'Geometric path length (only $\Omega_0$ moves it)')
+    axL.set_title(r'Absorption path length (depends on $\Omega_0$ only)')
     axL.grid(alpha=0.3); axL.legend()
 
-    # Right: low-N CDDF amplitude raw vs path-length-corrected, both scans.
     width = 0.35
-    xpos = np.arange(len(DEGEN_SCANS))
-    for j, scan in enumerate(DEGEN_SCANS):
-        rec = records[scan]
-        fid_idx = rec['fid_idx']
-        z = rec['z']
+    xpos = np.arange(len(records))
+    for j, (scan, rec) in enumerate(records.items()):
+        fid_idx, z = rec['fid_idx'], rec['z']
         raw = _norm_to_fid(rec['obs']['cddf_lowN'], fid_idx)
-        # path-length correction: f_corr = f * dX(fid)/dX(variant)
-        dX = np.array([dXdz(z, o) if np.isfinite(o) and np.isfinite(z)
-                       else np.nan for o in rec['Omega0']])
-        corr = (dX[fid_idx] / dX) if fid_idx is not None else np.ones_like(dX)
+        dX = np.array([dXdz(z, o) if np.isfinite(o) and np.isfinite(z) else np.nan
+                       for o in rec['Omega0']])
+        corr = dX[fid_idx] / dX if fid_idx is not None else np.ones_like(dX)
         cor = _norm_to_fid(rec['obs']['cddf_lowN'] * corr, fid_idx)
-        # spread (max-min across variants) before vs after correction
         axR.bar(xpos[j] - width / 2, np.nanmax(raw) - np.nanmin(raw),
                 width, color=SCAN_COLOR[scan], alpha=0.55,
-                label='raw spread' if j == 0 else None)
+                label='raw' if j == 0 else None)
         axR.bar(xpos[j] + width / 2, np.nanmax(cor) - np.nanmin(cor),
                 width, color=SCAN_COLOR[scan], hatch='//', alpha=0.85,
-                label='after dX correction' if j == 0 else None)
+                label='dX/dz divided out' if j == 0 else None)
     axR.set_xticks(xpos)
-    axR.set_xticklabels([f'{s}\n({SCANS[s]["label"]})' for s in DEGEN_SCANS])
-    axR.set_ylabel(r'spread of $f(10^{13})$/fid across variants')
-    axR.set_title('Path-length correction shrinks only the $\\Omega_0$ spread')
+    axR.set_xticklabels([f'{s}\n({SCANS[s]["label"]})' for s in records])
+    axR.set_ylabel(rf'spread of $f(10^{{{CDDF_LOWN}}})$ / fid across variants')
+    axR.set_title(r'Path-length correction shrinks only the $\Omega_0$ spread')
     axR.grid(alpha=0.3, axis='y'); axR.legend()
 
-    fig.suptitle(f'Path-length geometry test -- geometric discriminant ({snap_label})', fontsize=13)
+    fig.suptitle(f'Absorption path length ({snap_label})', fontsize=13)
     fig.tight_layout()
     _save(fig, out_path)
 
 
-# =====================================================================
-# Flux-power scale split -- power-spectrum shape (scale split)
-# =====================================================================
-
 def power_scale_split_test(records, out_path, snap_label):
-    """small/large P_F(k) band ratio vs parameter, normalized to fiducial.
-    Omega_0 tilts (k_eq shift); sigma_8 should stay ~flat."""
+    """Small/large-scale flux power ratio / fiducial vs parameter / fiducial.
+    Returns the fitted slope per scan with a numeric parameter."""
     fig, ax = plt.subplots(figsize=(8, 5.5))
     slopes = {}
-    for scan in DEGEN_SCANS:
-        rec = records[scan]
+    for scan, rec in records.items():
         fid_idx = rec['fid_idx']
         y = _norm_to_fid(rec['obs']['power_ratio'], fid_idx)
         x = rec['param'] / rec['param'][fid_idx] if fid_idx is not None else rec['param']
         ax.plot(x, y, SCAN_MARKER[scan] + '-', color=SCAN_COLOR[scan],
                 lw=2, ms=7, label=f'{scan} ({SCANS[scan]["label"]})')
         m = np.isfinite(x) & np.isfinite(y)
-        # Only fit a slope where the x-axis is a physical parameter. On EX the
-        # x-axis is the order the sims are listed in, and its slope means nothing.
         if m.sum() >= 2 and has_numeric_param(scan):
             slopes[scan] = float(np.polyfit(x[m], y[m], 1)[0])
     ax.axhline(1.0, color='gray', lw=0.8, ls=':')
     ax.axvline(1.0, color='gray', lw=0.8, ls=':')
-    ax.set_xlabel('parameter / fiducial'
-                  if all(has_numeric_param(s) for s in DEGEN_SCANS)
-                  else 'variant (ordinal for categorical sets)')
+    ax.set_xlabel('parameter / fiducial' if all(has_numeric_param(s) for s in records)
+                  else 'variant')
     ax.set_ylabel(r'(small/large $P_F$ ratio) / fid')
-    sub = ', '.join(f'{s} slope={slopes[s]:.2f}' for s in DEGEN_SCANS if s in slopes) \
-          or 'no numeric parameter axis -- slope not defined'
-    ax.set_title(f'Flux-power scale split -- $P_F(k)$ shape tilt ({snap_label})\n{sub}', fontsize=11)
+    sub = ', '.join(f'{s} slope={v:.2f}' for s, v in slopes.items()) or 'no numeric parameter'
+    ax.set_title(f'Small/large-scale flux power ratio ({snap_label})\n{sub}', fontsize=11)
     ax.grid(alpha=0.3); ax.legend()
     fig.tight_layout()
     _save(fig, out_path)
     return slopes
 
 
-# =====================================================================
-# Observable-pair map -- observable-space map (joint figure)
-# =====================================================================
-
 def observable_pair_map(records, out_path, snap_label):
-    """Parametric curves in two observable planes. Non-collinear p1 vs p2 =>
-    the 2D observable breaks the 1D degeneracy."""
+    """One observable against another along each scan. Tracks that are not
+    collinear separate the parameters even where each observable alone cannot."""
     pairs = [('tau_eff', 'T0'), ('tau_eff', 'power_ratio')]
     extr = _obs_extractors()
     fig, axes = plt.subplots(1, len(pairs), figsize=(6.5 * len(pairs), 5.5))
     for ax, (xn, yn) in zip(np.atleast_1d(axes), pairs):
-        for scan in DEGEN_SCANS:
-            rec = records[scan]
-            fid_idx = rec['fid_idx']
-            xv = _norm_to_fid(rec['obs'][xn], fid_idx)
-            yv = _norm_to_fid(rec['obs'][yn], fid_idx)
+        for scan, rec in records.items():
+            xv = _norm_to_fid(rec['obs'][xn], rec['fid_idx'])
+            yv = _norm_to_fid(rec['obs'][yn], rec['fid_idx'])
             ax.plot(xv, yv, SCAN_MARKER[scan] + '-', color=SCAN_COLOR[scan],
                     lw=2, ms=7, label=f'{scan} ({SCANS[scan]["label"]})')
-            # annotate variant suffixes along the curve
             for i, r in enumerate(rec['rows']):
                 if np.isfinite(xv[i]) and np.isfinite(yv[i]):
-                    ax.annotate(r['suffix'], (xv[i], yv[i]),
-                                xytext=(4, 4), textcoords='offset points',
-                                fontsize=7, color=SCAN_COLOR[scan])
+                    ax.annotate(r['suffix'], (xv[i], yv[i]), xytext=(4, 4),
+                                textcoords='offset points', fontsize=7,
+                                color=SCAN_COLOR[scan])
         ax.axhline(1.0, color='gray', lw=0.8, ls=':')
         ax.axvline(1.0, color='gray', lw=0.8, ls=':')
         ax.set_xlabel(extr[xn][1] + ' / fid')
         ax.set_ylabel(extr[yn][1] + ' / fid')
         ax.grid(alpha=0.3); ax.legend()
-    fig.suptitle(f'Observable-pair map -- observable-space map: separated tracks break the '
-                 f'degeneracy ({snap_label})', fontsize=13)
+    fig.suptitle(f'Observable pairs ({snap_label})', fontsize=13)
     fig.tight_layout()
     _save(fig, out_path)
 
 
 # =====================================================================
-# CDDF amplitudes -- the two epochs at which each one is usable
+# Multi-snapshot figures. `records_by_snap` maps snap -> {scan -> record}.
 # =====================================================================
 
 def cddf_amplitude_figure(records_by_snap, out_path,
                           panels=(('cddf_lowN', 3.0), ('cddf_highN', 0.0))):
-    """The two CDDF amplitudes, each at the epoch where it separates the scans.
-
-    The full s8_collapse figure carries all seven observables at one snapshot;
-    this is the transpose -- one observable per panel, each at its own redshift,
-    so the two results that survive the seed floor can be shown side by side.
-
-    Panels are (observable, target z); the snapshot used is whichever one in
-    records_by_snap sits nearest that z, so the figure does not break when the
-    snapshot list changes. Where 'ex' is among the scans its fiducial member is
-    the seed pair of the p1 fiducial, so its offset from 1.0 IS the seed floor.
-    """
+    """One CDDF amplitude per panel, each at the snapshot nearest its target z."""
     extr = _obs_extractors()
     fig, axes = plt.subplots(1, len(panels), figsize=(5.6 * len(panels), 4.4),
                              squeeze=False)
@@ -554,21 +408,19 @@ def cddf_amplitude_figure(records_by_snap, out_path,
     for ax, (name, z_target) in zip(axes.ravel(), panels):
         _, lbl, logy = extr[name]
         snap = min(records_by_snap,
-                   key=lambda s: abs(records_by_snap[s][DEGEN_SCANS[0]]['z'] - z_target))
+                   key=lambda s: abs(next(iter(records_by_snap[s].values()))['z'] - z_target))
         records = records_by_snap[snap]
+        z = next(iter(records.values()))['z']
         curves = {}
-        for scan in DEGEN_SCANS:
-            rec = records[scan]
+        for scan, rec in records.items():
             y = _norm_to_fid(rec['obs'][name], rec['fid_idx'])
-            yerr = _norm_err_to_fid(rec['obs'][name],
-                                    rec.get('obs_err', {}).get(name),
-                                    rec['fid_idx'])
+            yerr = _norm_err_to_fid(rec['obs'][name], rec['obs_err'][name], rec['fid_idx'])
             ax.errorbar(rec['S8'], y, yerr=yerr, fmt=SCAN_MARKER[scan] + '-',
                         color=SCAN_COLOR[scan], lw=1.8, ms=6, capsize=3,
                         label=f'{scan} ({SCANS[scan]["label"]})')
             curves[scan] = (rec['S8'], y)
         gap = _matched_s8_gap(curves)
-        gaps[name] = {'snap': snap, 'z': records[DEGEN_SCANS[0]]['z'], 'gap': gap}
+        gaps[name] = {'snap': snap, 'z': z, 'gap': gap}
 
         ax.axvline(S8_FID, color='gray', lw=0.8, ls=':')
         ax.axhline(1.0,    color='gray', lw=0.8, ls=':')
@@ -576,69 +428,43 @@ def cddf_amplitude_figure(records_by_snap, out_path,
             ax.set_yscale('log')
         ax.set_xlabel(r'$S_8 = \sigma_8\sqrt{\Omega_m/0.3}$')
         ax.set_ylabel(lbl + ' / fid')
-        z = records[DEGEN_SCANS[0]]['z']
-        tag = f'  (split={gap:.3f})' if np.isfinite(gap) else ''
-        ax.set_title(f'{name} at $z = {z:.2f}$' + tag, fontsize=11)
+        ax.set_title(f'{name} at $z = {z:.2f}$' + (f'  (gap={gap:.3f})' if np.isfinite(gap) else ''),
+                     fontsize=11)
         ax.grid(alpha=0.3, which='both')
     axes.ravel()[0].legend(fontsize=9, loc='best')
-    fig.suptitle('CDDF amplitudes -- each at the epoch where it separates the '
-                 'two scans by more than the seed floor', fontsize=12)
+    fig.suptitle('CDDF amplitudes vs $S_8$', fontsize=12)
     fig.tight_layout()
     _save(fig, out_path)
     return gaps
 
 
-# =====================================================================
-# Evolution-index test -- redshift evolution / growth rate (across snapshots)
-# =====================================================================
-
 def evolution_index_test(records_by_snap, out_path, obs_names=('tau_eff', 'mean_flux')):
-    """For each scan, plot observable vs z (one line per variant) in its own
-    panel, and report the per-variant evolution index d ln(obs) / d ln(1+z).
-
-    The index, not a straight-line d(obs)/dz. tau_eff runs 0.01 to 8 and the mean
-    flux 0.95 to 0.0002 across this z range, so a linear fit is dominated by
-    whichever endpoint is in the snapshot list and the number moves when the list
-    does. The power law is the standard forest parameterisation and is scale-free.
-
-    Expect the answer to be boring: every variant returns an index of 2.28..2.41,
-    because raising Omega_0 or sigma_8 scales tau_eff at all z rather than
-    changing how it evolves. The information is in the intercept -- amplitude --
-    which is exactly what the S_8 collapse test says is degenerate.
-    """
-    snaps = list(records_by_snap.keys())
+    """Observable vs z for every variant, one panel per scan, and the index
+    d ln(obs) / d ln(1+z) per variant. A power law, because tau_eff spans three
+    decades and a linear fit would be set by the end points."""
+    snaps = list(records_by_snap)
     if len(snaps) < 2:
-        print('  [evolution-index] need >= 2 snaps for redshift evolution -- skipping')
+        print('  [evolution index] needs >= 2 snapshots -- skipping')
         return {}
+    scans = list(records_by_snap[snaps[0]])
 
-    nrow = len(obs_names)
-    ncol = len(DEGEN_SCANS)
-    fig, axes = plt.subplots(nrow, ncol, figsize=(6.0 * ncol, 4.4 * nrow),
-                             squeeze=False)
+    fig, axes = plt.subplots(len(obs_names), len(scans),
+                             figsize=(6.0 * len(scans), 4.4 * len(obs_names)), squeeze=False)
     slopes = {}
-    for j, scan in enumerate(DEGEN_SCANS):
-        snaps_z = sorted(
-            snaps,
-            key=lambda s: (records_by_snap[s][scan]['z']
-                           if np.isfinite(records_by_snap[s][scan]['z']) else np.inf))
+    for j, scan in enumerate(scans):
+        snaps_z = sorted(snaps, key=lambda s: np.nan_to_num(records_by_snap[s][scan]['z'], nan=np.inf))
         zarr = np.array([records_by_snap[s][scan]['z'] for s in snaps_z], float)
         mem = members(scan)
         colors = plt.cm.viridis(np.linspace(0, 0.9, len(mem)))
         for i, name in enumerate(obs_names):
             ax = axes[i][j]
             for vi, suf in enumerate(mem):
-                yv = np.array([records_by_snap[s][scan]['obs'][name][vi]
-                               for s in snaps_z], float)
-                ev = np.array([records_by_snap[s][scan]
-                               .get('obs_err', {})
-                               .get(name, [np.nan] * len(mem))[vi]
-                               for s in snaps_z], float)
+                yv = np.array([records_by_snap[s][scan]['obs'][name][vi] for s in snaps_z], float)
+                ev = np.array([records_by_snap[s][scan]['obs_err'][name][vi] for s in snaps_z], float)
                 pv = records_by_snap[snaps_z[0]][scan]['param'][vi]
                 ax.errorbar(zarr, yv, yerr=ev if np.any(np.isfinite(ev)) else None,
                             fmt='o-', color=colors[vi], lw=1.6, ms=5, capsize=2,
                             label=f'{suf} ({pv:.2f})')
-                # Power-law index, so the number does not depend on which
-                # snapshots happen to be in the list. Needs y > 0.
                 m = np.isfinite(zarr) & np.isfinite(yv) & (yv > 0) & (zarr > -1)
                 if m.sum() >= 2:
                     slopes.setdefault(scan, {}).setdefault(name, {})[suf] = float(
@@ -647,45 +473,33 @@ def evolution_index_test(records_by_snap, out_path, obs_names=('tau_eff', 'mean_
             ax.set_xlabel('redshift z')
             if name == 'tau_eff':
                 ax.set_ylim(-0.5, 3)
-                ax.set_ylabel('tau_eff')
-                ax.set_title(f'{scan} ({SCANS[scan]["label"]}) -- $\\tau_{{\\rm eff}}(z)$')
-            elif name == 'mean_flux':
-                ax.set_ylabel('mean flux')
-                ax.set_title(f'{scan} ({SCANS[scan]["label"]}) -- $\\langle F \\rangle(z)$')
+                ax.set_ylabel(r'$\tau_{\rm eff}$')
+            else:
+                ax.set_ylabel(r'$\langle F \rangle$' if name == 'mean_flux' else name)
+            ax.set_title(f'{scan} ({SCANS[scan]["label"]})')
             ax.grid(alpha=0.3)
             if i == 0 and j == 0:
                 ax.legend(title='variant', fontsize=7)
-    fig.suptitle('Evolution-index test -- redshift evolution. Reported index is '
-                 r'$d\ln(\rm obs)/d\ln(1+z)$; it barely moves across either scan, '
-                 'so this is a null test, not a discriminant.', fontsize=12)
+    fig.suptitle(r'Redshift evolution; index = $d\ln({\rm obs})/d\ln(1+z)$', fontsize=12)
     fig.tight_layout()
     _save(fig, out_path)
     return slopes
 
 
 # =====================================================================
-# Entry
-# =====================================================================
 
 def main():
-    global DEGEN_SCANS
     ap = argparse.ArgumentParser()
     ap.add_argument('--analysis-root', required=True, type=Path,
-                    help='root holding the 1P scan dirs (1P_p1_0/, ...)')
+                    help='directory holding 1P_p1_0/, 1P_p2_0/, ...')
     ap.add_argument('--ex-root', type=Path, default=None,
-                    help='root holding the EX dirs (EX_0/, ...). Required to '
-                         'include ex in --scans: EX lives in a sibling tree, so '
-                         'one root cannot reach both and every row silently '
-                         'comes back empty if you try.')
+                    help='directory holding EX_0/, ...; required if --scans includes ex')
     ap.add_argument('--cosmo-csv', required=True, type=Path, nargs='+',
-                    help='one or more CosmoAstroSeed tables; pass the 1P and EX '
-                         'ones together to run --scans p1,p2,ex')
+                    help='CosmoAstroSeed table(s); pass the 1P and EX ones for --scans p1,p2,ex')
     ap.add_argument('--scans', default=','.join(DEGEN_SCANS),
-                    help='comma-separated scans to overlay (any of '
-                         + ','.join(SCANS) + ')')
+                    help='comma-separated, any of ' + ','.join(SCANS))
     ap.add_argument('--snaps', default='snap-080,snap-044',
-                    help='comma-separated snap dirs; the first is the primary '
-                         'single-snapshot one, all are used for the evolution index')
+                    help='comma-separated snapshot dirs')
     ap.add_argument('--out-dir', type=Path, default=Path('plots/degeneracy_test'))
     args = ap.parse_args()
 
@@ -693,14 +507,8 @@ def main():
     unknown = [s for s in scans if s not in SCANS]
     if unknown:
         ap.error(f'unknown scan(s) {unknown}; known: {list(SCANS)}')
-    DEGEN_SCANS = scans
-
-    # EX_0/ and 1P_p1_0/ are siblings, not children of one root. Resolve each
-    # scan to its own tree rather than letting build_scan_frame come back with
-    # zero rows and turn the whole run into NaN.
     if 'ex' in scans and args.ex_root is None:
-        ap.error("--scans includes 'ex' but --ex-root was not given; EX lives in "
-                 'a separate tree from the 1P scans')
+        ap.error("--scans includes 'ex' but --ex-root was not given")
     root_for = {s: (args.ex_root if s == 'ex' else args.analysis_root) for s in scans}
 
     _setup_style()
@@ -708,58 +516,44 @@ def main():
     snaps = [s.strip() for s in args.snaps.split(',') if s.strip()]
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build records for every (scan, snap).
-    records_by_snap = {}
-    for snap in snaps:
-        records_by_snap[snap] = {
-            scan: scan_record(root_for[scan], cosmo, scan, snap)
-            for scan in DEGEN_SCANS}
-
-    # A scan that resolved to nothing produces an all-NaN figure that looks like
-    # a result. Say so instead.
+    records_by_snap = {snap: {scan: scan_record(root_for[scan], cosmo, scan, snap)
+                              for scan in scans}
+                       for snap in snaps}
     for snap, recs in records_by_snap.items():
         for scan, rec in recs.items():
             if rec['fid_idx'] is None or not np.isfinite(rec['z']):
-                print(f'  WARNING: {scan} has no usable fiducial row at {snap} '
-                      f'under {root_for[scan]} -- its panels will be empty')
+                print(f'  WARNING: {scan} has no fiducial at {snap} under {root_for[scan]}')
 
     summary = {'snaps': snaps, 'per_snap': {}}
-
-    # Single-snapshot diagnostics for each snap.
     for snap in snaps:
-        print(f'\n=== degeneracy diagnostics, {snap} ===')
+        print(f'\n=== {snap} ===')
         recs = records_by_snap[snap]
         d = args.out_dir / snap
         d.mkdir(parents=True, exist_ok=True)
-        # Figures are captioned by redshift, not by the directory they came
-        # from -- these end up in write-ups where a snapshot number means nothing.
-        zs = [recs[s]['z'] for s in DEGEN_SCANS if np.isfinite(recs[s]['z'])]
+        zs = [r['z'] for r in recs.values() if np.isfinite(r['z'])]
         label = f'$z = {zs[0]:.2f}$' if zs else snap
-        split = s8_collapse_test(recs, d / 's8_collapse.png', label)
+        gaps = s8_collapse_test(recs, d / 's8_collapse.png', label)
         path_length_geometry_test(recs, d / 'path_length_geometry.png', label)
-        pslopes = power_scale_split_test(recs, d / 'power_scale_split.png', label)
+        slopes = power_scale_split_test(recs, d / 'power_scale_split.png', label)
         observable_pair_map(recs, d / 'observable_pair_map.png', label)
         summary['per_snap'][snap] = {
-            'z': {s: recs[s]['z'] for s in DEGEN_SCANS},
-            's8_collapse_split': split,        # bigger = more degeneracy-breaking
-            'power_scale_split_slope': pslopes,
+            'z': {s: r['z'] for s, r in recs.items()},
+            'matched_s8_gap': gaps,
+            'power_ratio_slope': slopes,
         }
         with open(d / 'summary.json', 'w') as fh:
             json.dump(summary['per_snap'][snap], fh, indent=2, default=float)
 
-    # The two CDDF amplitudes, each at its own epoch.
-    print('\n=== CDDF amplitude figure ===')
+    print('\n=== CDDF amplitudes ===')
     summary['cddf_amplitudes'] = cddf_amplitude_figure(
         records_by_snap, args.out_dir / 'cddf_amplitudes.png')
 
-    # Across-snapshot growth-rate diagnostic.
-    print('\n=== evolution-index diagnostic ===')
-    evo_index = evolution_index_test(
+    print('\n=== evolution index ===')
+    summary['evolution_index'] = evolution_index_test(
         records_by_snap, args.out_dir / 'evolution_index.png')
-    summary['evolution_index'] = evo_index
+
     with open(args.out_dir / 'summary.json', 'w') as fh:
         json.dump(summary, fh, indent=2, default=float)
-
     print(f'\nAll outputs under {args.out_dir.resolve()}')
 
 

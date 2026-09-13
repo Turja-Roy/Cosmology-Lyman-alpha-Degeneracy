@@ -360,7 +360,7 @@ def plot_thermal_trend(rows, out_path, snap_label):
     ax1.set_title(f'TDR slope ({snap_label})')
     ax1.grid(alpha=0.3)
 
-    fig.suptitle('Thermal state vs parameter — Thermal state of the diffuse IGM')
+    fig.suptitle('Thermal state of the diffuse IGM')
     fig.tight_layout()
     _save(fig, out_path)
 
@@ -385,7 +385,8 @@ def plot_cddf_pathlength(rows, out_path, snap_label):
         cddf = r['cddf']
         if cddf is None or np.isnan(r['param_value']):
             continue
-        mask = cddf['f_N_HI'] > 0
+        # Visible bins only, so autoscale ignores the DLA tail beyond the x-window.
+        mask = (cddf['f_N_HI'] > 0) & cddf['log10_N_HI'].between(*CDDF_XLIM)
         lbl = f"{r['suffix']} ({plab}={r['param_value']:.2f})"
         err = _cddf_poisson_err(cddf)
 
@@ -399,20 +400,20 @@ def plot_cddf_pathlength(rows, out_path, snap_label):
             if err is not None:
                 e = err[mask] / denom
                 ax.fill_between(cddf['log10_N_HI'][mask],
-                                np.clip(y - e, 1e-300, None), y + e,
+                                np.clip(y - e, y * 1e-2, None), y + e,
                                 color=c, alpha=0.18, lw=0)
 
     for ax, title in [(axL, 'As-published CDDF'),
                       (axR, r'after $\times$ dX(fid)/dX($\Omega_0$)')]:
         ax.set_yscale('log')
         ax.set_xlabel(r'$\log_{10}\, N_{\rm HI}\,[{\rm cm}^{-2}]$')
-        ax.set_ylabel(r'$f(N_{\rm HI})$  [Mpc$^{-1}$]')
-        ax.set_xlim(12, 16)
+        ax.set_ylabel(r'$f(N_{\rm HI})$  [cm$^{2}$]')
+        ax.set_xlim(*CDDF_XLIM)
         ax.grid(alpha=0.3, which='both')
         ax.set_title(title)
         ax.legend(fontsize=8, loc='best')
 
-    fig.suptitle(f'CDDF path-length control — CDDF path-length control ({snap_label})')
+    fig.suptitle(f'CDDF path-length control ({snap_label})')
     fig.tight_layout()
     _save(fig, out_path)
 
@@ -465,7 +466,7 @@ def plot_fgpa_residual(rows, out_path, snap_label):
     ax.set_xlabel(plab)
     ax.set_ylabel('ratio to fiducial')
     ax.set_yscale('log')
-    ax.set_title(f'FGPA thermal-only vs measured — FGPA thermal-only vs. measured ({snap_label})')
+    ax.set_title(f'FGPA thermal-only vs measured ({snap_label})')
     ax.grid(alpha=0.3, which='both')
     ax.legend()
     fig.tight_layout()
@@ -537,7 +538,7 @@ def plot_cross_scan_direction(analysis_root, cosmo_table, snap, out_path,
         ax.grid(alpha=0.3, which='both')
         ax.legend(fontsize=9)
 
-    fig.suptitle(f'cross-scan direction — direction of effect across parameter scans ({snap})')
+    fig.suptitle(f'Direction of effect across parameter scans ({snap})')
     fig.tight_layout()
     _save(fig, out_path)
     return summary
@@ -632,7 +633,7 @@ def _grid_cddf(frames, snaps, out_path):
         ax.set_yscale('log')
         ax.set_title(_panel_title(rows, snap))
         ax.set_xlabel(r'$\log_{10}\, N_{\rm HI}$')
-        ax.set_ylabel(r'$f(N_{\rm HI})$ [Mpc$^{-1}$]')
+        ax.set_ylabel(r'$f(N_{\rm HI})$ [cm$^{2}$]')
         ax.set_xlim(*CDDF_XLIM)
         # f spans ~14 decades out to log N = 21.5 while only 12--16 is drawn,
         # and matplotlib autoscales over all data, not the x-window. Set the
@@ -664,7 +665,7 @@ def _grid_power(frames, snaps, out_path):
                       label=f"{r['param_value']:.1f}")
             if 'P_k_err' in ps.columns:
                 e = ps['P_k_err'].values
-                ax.fill_between(k[m], np.clip(P[m] - e[m], 1e-300, None), P[m] + e[m],
+                ax.fill_between(k[m], np.clip(P[m] - e[m], P[m] * 1e-2, None), P[m] + e[m],
                                 color=c, alpha=0.18, lw=0)
         ax.set_title(_panel_title(rows, snap))
         ax.set_xlabel(r'$k$ [s/km]')

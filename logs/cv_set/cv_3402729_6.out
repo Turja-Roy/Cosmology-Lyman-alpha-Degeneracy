@@ -1,0 +1,22 @@
+========================================
+Task 6: CV_5 snap_024 on c314-143.ls6.tacc.utexas.edu
+Started: Sun Aug 30 13:09:02 CDT 2026
+========================================
+[1/2] generate: data/IllustrisTNG/CV/CV_5/snap_024.hdf5  (lines: lya,lya_h)
+[generate] started 2026-08-30 13:09:03
+======================================================================
+GENERATING SPECTRA FROM SIMULATION SNAPSHOT
+======================================================================
+Snapshot:    data/IllustrisTNG/CV/CV_5/snap_024.hdf5
+Snap number: 24
+Sightlines:  10000
+Resolution:  0.1 km/s/pixel
+Random seed: 42
+Lines:		Lyman-alpha (H1 1215Å)  Lyman-alpha (total H, no ionisation correction) (H-1 1215Å)  
+
+[1/5] Loading snapshot metadata...
+[generate] finished in 00:00:06  (status 1)
+TIMING job=3402735 task=6 sim=CV_5 snap=024 step=generate status=1 seconds=6 elapsed=00:00:06
+ERROR: generate failed (CV_5 snap_024)
+[total] 00:00:07
+TIMING job=3402735 task=6 sim=CV_5 snap=024 step=total status=1 seconds=7 elapsed=00:00:07

@@ -1,0 +1,252 @@
+========================================
+Task 9: 1P_p8_1 snap_080 on c314-183.ls6.tacc.utexas.edu
+Started: Sun Aug 30 12:40:53 CDT 2026
+========================================
+[1/2] generate: data/IllustrisTNG/1P/1P_p8_1/snap_080.hdf5  (lines: lya,lya_h)
+[generate] started 2026-08-30 12:40:54
+======================================================================
+GENERATING SPECTRA FROM SIMULATION SNAPSHOT
+======================================================================
+Snapshot:    data/IllustrisTNG/1P/1P_p8_1/snap_080.hdf5
+Snap number: 80
+Sightlines:  10000
+Resolution:  0.1 km/s/pixel
+Random seed: 42
+Lines:		Lyman-alpha (H1 1215Å)  Lyman-alpha (total H, no ionisation correction) (H-1 1215Å)  
+
+[1/5] Loading snapshot metadata...
+Redshift:      z = 0.270
+Box size:      25.54 Mpc/h
+Gas particles: 16,208,091
+
+[2/5] Setting up sightlines...
+Loading sightlines from: output/sightlines/analysis_sightlines_2025-01-28.hdf5
+Loaded 10000 sightlines
+  Positions range: [0.3, 24998.1] ckpc/h
+  Axes: x=3238, y=3440, z=3322
+
+[3/5] Initializing fake_spectra (applying Python 3.13 bugfixes)...
+Applied fake_spectra bugfixes for Python 3.13 compatibility
+Output will be saved to: /tmp/camel_lya_lya_h_spectra_1P_p8_1_snap_080_n10000.hdf5
+
+[4/5] Initializing spectra object...
+Reloading from snapshot (will save to:  /tmp/camel_lya_lya_h_spectra_1P_p8_1_snap_080_n10000.hdf5  )
+10000  sightlines. resolution:  0.10000238875237907  z= 0.2695879598716575
+Loaded snapshot 80
+Initialized 10000 sightlines
+Velocity range: 2257.15 km/s
+Resolution: 0.1000 km/s/pixel
+
+[5/5] Computing optical depths...
+[1/2] Lyman-alpha (H 1 1215Å)... OK (138.5s, tau=(10000, 22571), colden=(10000, 22571))
+[2/2] Lyman-alpha (total H, no ionisation correction) (H -1 1215Å)... OK (507.0s, tau=(10000, 22571), colden=(10000, 22571))
+  Total computation time: 645.5s
+
+Computing temperature and density in 5 chunks of ~2000 sightlines...
+  Total sightlines: 10000
+  Chunk size: 2000
+
+  Chunk 1/5: sightlines 0-1999 (2000 sightlines)
+    Computing temperature... OK (shape: (2000, 22571))
+    Computing density-weighted density... OK (shape: (2000, 22571))
+
+  Chunk 2/5: sightlines 2000-3999 (2000 sightlines)
+    Computing temperature... OK (shape: (2000, 22571))
+    Computing density-weighted density... OK (shape: (2000, 22571))
+
+  Chunk 3/5: sightlines 4000-5999 (2000 sightlines)
+    Computing temperature... OK (shape: (2000, 22571))
+    Computing density-weighted density... OK (shape: (2000, 22571))
+
+  Chunk 4/5: sightlines 6000-7999 (2000 sightlines)
+    Computing temperature... OK (shape: (2000, 22571))
+    Computing density-weighted density... OK (shape: (2000, 22571))
+
+  Chunk 5/5: sightlines 8000-9999 (2000 sightlines)
+    Computing temperature... OK (shape: (2000, 22571))
+    Computing density-weighted density... OK (shape: (2000, 22571))
+
+  Concatenating 5 chunks...
+    Temperature shape: (10000, 22571)
+    Density shape: (10000, 22571)
+  ✓ Temperature and density computation complete
+
+Saving to HDF5...
+Saved to: /tmp/camel_lya_lya_h_spectra_1P_p8_1_snap_080_n10000.hdf5
+Added velocity spacing to header: vmax=2257.15 km/s, dvbin=0.1000 km/s/pixel
+Saved sightlines to /Sightlines/ group in spectra file
+
+======================================================================
+Spectra saved to:
+  /tmp/camel_lya_lya_h_spectra_1P_p8_1_snap_080_n10000.hdf5
+======================================================================
+[generate] finished in 00:13:07  (status 0)
+TIMING job=3402690 task=9 sim=1P_p8_1 snap=080 step=generate status=0 seconds=787 elapsed=00:13:07
+[2/2] analyze: spectra/IllustrisTNG/1P/1P_p8_1/camel_lya_lya_h_spectra_snap_080_n10000.hdf5
+[analyze] started 2026-08-30 12:54:01
+======================================================================
+ANALYZING LYMAN-ALPHA SPECTRA
+======================================================================
+Input file: spectra/IllustrisTNG/1P/1P_p8_1/camel_lya_lya_h_spectra_snap_080_n10000.hdf5
+Workers: 1
+
+[1/5] Loading spectra data...
+Auto-detected: Lyman-alpha (H I 1215Å)
+  Loaded column density data from colden/H/1
+  Using fake_spectra's pre-computed column densities for accuracy
+Sightlines: 10000
+Pixels: 22571
+Redshift: z = 0.270
+
+======================================================================
+COMPREHENSIVE ANALYSIS
+======================================================================
+
+[1/8] Computing basic flux statistics...
+Statistics:
+========================================
+Mean flux:              0.9406
+Median flux:            0.9941
+Std dev:                0.1582
+
+Effective tau_eff:        0.0613
+Mean tau:                 821.9797
+Median tau:               0.0060
+
+Deep absorption:        1.15%
+Moderate absorption:    2.34%
+Weak absorption:        96.51%
+
+[2/8] Computing effective optical depth tau_eff...
+tau_eff = 0.0613 ± 0.0016
+  (per-sightline scatter sigma = 0.1573; the +/- above is sigma/sqrt(N), internal only -- no cosmic variance)
+Mean transmitted flux <F> = 0.9406 ± 0.0005
+
+[2b/8] Computing flux and optical-depth PDFs...
+Flux PDF: 50 bins on [0, 1]
+log10(tau) PDF: 60 bins on [-3, 2]; 0.102% of pixels above the grid, 0.000% at tau = 0
+
+[2c/8] Found total-H optical depth (ion = -1); computing tau_eff_H...
+tau_eff(H, total)  = 13.2187
+tau_eff(HI)/tau_eff(H) = 4.6363e-03  (effective HI fraction)
+Using velocity spacing from header: 0.1000 km/s/pixel
+
+[3/8] Computing flux power spectrum P_F(k)...
+Computed power spectrum with 11286 k-modes
+k range: 0.0028 to 31.41 s/km
+Mean flux used: 0.9406
+
+[4/8] Computing column density distribution f(N_HI) using simple method...
+Absorbers: fixed 50 km/s cells (fake_spectra line=False); N per absorber: summed pixel colden
+Identified 450000 absorbers
+Absorption path length: X = 0.013441 (absorption distance, dimensionless)
+Power law index β = 2.06
+
+[4b/8] Computing line width distribution b(N_HI)...
+Identified 17388 absorbers with b-parameters
+Median b-parameter: 78.9 km/s
+Mean b-parameter: 61.9 ± 22.0 km/s
+Implied temperature: 49054 × 10³ K
+
+[4e/8] Mean-flux rescaling to observed tau_eff...
+Skipped: z = 0.2695879598716575 is outside the Kim+07 validity range (1.7 < z < 4). Extrapolating that power law is not meaningful; the low-z reference (HST/COS, Danforth+2016) is not implemented yet.
+
+[4c/8] Checking for temperature-density data...
+Found temperature and density data - using chunked processing...
+Processing T-ρ data: 10,000 sightlines × 22,571 pixels
+Using chunk size: 1000
+  Processing chunk 1/10 (0-1,000)
+  Processing chunk 2/10 (1,000-2,000)
+  Processing chunk 3/10 (2,000-3,000)
+  Processing chunk 4/10 (3,000-4,000)
+  Processing chunk 5/10 (4,000-5,000)
+  Processing chunk 6/10 (5,000-6,000)
+  Processing chunk 7/10 (6,000-7,000)
+  Processing chunk 8/10 (7,000-8,000)
+  Processing chunk 9/10 (8,000-9,000)
+  Processing chunk 10/10 (9,000-10,000)
+  Total valid pixels: 29,651,099
+  Valid pixels: 29,651,099
+  T_0 (at mean density): 14909 K
+  gamma (polytropic index): 1.130
+
+[4d/8] Checking for multi-line data...
+Found 2 spectral lines - performing multi-line analysis...
+Analyzing H (total) 1215Å (threshold=0.5)...
+Absorbers: 10003, dN/dz: 10.00, covering: 100.0%
+Analyzing HI 1215Å (threshold=0.5)...
+Absorbers: 16769, dN/dz: 16.77, covering: 4.6%
+Multi-line analysis complete
+
+[5/8] Setting up plots...
+
+[6/8] Creating comprehensive analysis plots...
+  Saved: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_sample_spectra_snap_080.png
+[a] Sample spectra: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_sample_spectra_snap_080.png
+  Saved: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_power_spectrum_snap_080.png
+[b] Power spectrum: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_power_spectrum_snap_080.png
+  Saved: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_cddf_snap_080.png
+[c] CDDF: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_cddf_snap_080.png
+  Saved: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_line_widths_snap_080.png
+[d] Line widths: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_line_widths_snap_080.png
+  Saved: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_temp_density_snap_080.png
+[e] T-ρ relation: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_temp_density_snap_080.png
+  Saved: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_multi_line_comparison_snap_080.png
+[f] Multi-line comparison: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_multi_line_comparison_snap_080.png
+
+[7/8] Creating detailed statistics plots...
+  [d] Statistics: /work/11170/roy/CGM/plots/IllustrisTNG/1P/1P_p8_1/camel_statistics_snap_080.png
+
+[8] Creating diagnostic plots from snapshot
+----------------------------------------------------------------------
+Found snapshot: /work/11170/roy/CGM/data/IllustrisTNG/1P/1P_p8_1/snap_080.hdf5
+Warning: Could not create diagnostic plots: name 'plot_snapshot_diagnostic' is not defined
+
+[9/8] Exporting analysis results...
+Saved 8 CSV data files to: /work/11170/roy/CGM/output/analysis/IllustrisTNG/1P/1P_p8_1/snap-080
+Exported analysis data to: /work/11170/roy/CGM/output/analysis/IllustrisTNG/1P/1P_p8_1/snap-080
+
+======================================================================
+COMPREHENSIVE ANALYSIS COMPLETE
+======================================================================
+
+Key Results:
+Mean flux <F>:           0.9406 ± 0.0005
+Effective tau tau_eff:     0.0613 ± 0.0016
+tau_eff(HI)/tau_eff(H):  4.6363e-03
+Number of absorbers:     450000
+CDDF power law β:        2.06
+Mean b-parameter:        61.9 ± 22.0 km/s
+Implied temperature:     49054 × 10³ K
+T_0 (at mean density):    14909 K
+gamma (polytropic index):    1.130
+Multi-line analysis:     2 lines detected
+H (total) 1215Å: 10003 absorbers, dN/dz= 10.0, covering=100.0%
+HI 1215Å       : 16769 absorbers, dN/dz= 16.8, covering= 4.6%
+
+Plots saved to: /work/11170/roy/CGM/plots
+- Sample spectra
+- Flux power spectrum P_F(k)
+- Column density distribution f(N_HI)
+- Line width distribution b(N_HI)
+- Temperature-density relation T(ρ)
+- Multi-line comparison
+- Detailed statistics
+
+Data exported to: /work/11170/roy/CGM/output/analysis/IllustrisTNG/1P/1P_p8_1/snap-080
+- power_spectrum.csv
+- cddf.csv
+- flux_stats.csv
+- flux_pdf.csv
+- tau_pdf.csv
+- line_widths.csv
+- temp_density.csv
+- metal_lines.csv
+======================================================================
+[analyze] finished in 00:02:31  (status 0)
+TIMING job=3402690 task=9 sim=1P_p8_1 snap=080 step=analyze status=0 seconds=151 elapsed=00:02:31
+[total] 00:15:41
+TIMING job=3402690 task=9 sim=1P_p8_1 snap=080 step=total status=0 seconds=941 elapsed=00:15:41
+========================================
+1P_p8_1 snap_080 done: Sun Aug 30 12:56:34 CDT 2026
+========================================

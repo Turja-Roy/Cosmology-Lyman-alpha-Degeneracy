@@ -1,0 +1,97 @@
+[matter_pk_ex] started 2026-08-30 12:56:50
+
+=== matter P(k), snap_024, field=total ===
+ scan ex
+  EX_0 snap_024 [total]: z=3.996, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16539661, PartType1=16777216, PartType4=41723, PartType5=409
+  EX_1 snap_024 [total]: z=3.996, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16539661, PartType1=16777216, PartType4=41723, PartType5=409
+  EX_2 snap_024 [total]: z=3.996, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16562162, PartType1=16777216, PartType4=13531, PartType5=404
+  EX_3 snap_024 [total]: z=3.996, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16351733, PartType1=16777216, PartType4=249175, PartType5=418
+  saved plots/ex_matter_pk_test/Pk_snap_024.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_024.png
+
+=== matter P(k), snap_028, field=total ===
+ scan ex
+  EX_0 snap_028 [total]: z=3.496, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16474521, PartType1=16777216, PartType4=62174, PartType5=555
+  EX_1 snap_028 [total]: z=3.496, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16474521, PartType1=16777216, PartType4=62174, PartType5=555
+  EX_2 snap_028 [total]: z=3.496, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16518935, PartType1=16777216, PartType4=13940, PartType5=554
+  EX_3 snap_028 [total]: z=3.496, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16146533, PartType1=16777216, PartType4=418959, PartType5=586
+  saved plots/ex_matter_pk_test/Pk_snap_028.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_028.png
+
+=== matter P(k), snap_032, field=total ===
+ scan ex
+  EX_0 snap_032 [total]: z=2.999, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16399020, PartType1=16777216, PartType4=100434, PartType5=719
+  EX_1 snap_032 [total]: z=2.999, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16398903, PartType1=16777216, PartType4=100129, PartType5=718
+  EX_2 snap_032 [total]: z=2.999, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16482184, PartType1=16777216, PartType4=12129, PartType5=702
+  EX_3 snap_032 [total]: z=2.999, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15874503, PartType1=16777216, PartType4=682020, PartType5=765
+  saved plots/ex_matter_pk_test/Pk_snap_032.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_032.png
+
+=== matter P(k), snap_038, field=total ===
+ scan ex
+  EX_0 snap_038 [total]: z=2.465, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16316061, PartType1=16777216, PartType4=158170, PartType5=900
+  EX_1 snap_038 [total]: z=2.465, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16321355, PartType1=16777216, PartType4=151752, PartType5=899
+  EX_2 snap_038 [total]: z=2.465, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16455484, PartType1=16777216, PartType4=9712, PartType5=876
+  EX_3 snap_038 [total]: z=2.465, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15479501, PartType1=16777216, PartType4=1113470, PartType5=960
+  saved plots/ex_matter_pk_test/Pk_snap_038.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_038.png
+
+=== matter P(k), snap_044, field=total ===
+ scan ex
+  EX_0 snap_044 [total]: z=2.002, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16235345, PartType1=16777216, PartType4=234536, PartType5=980
+  EX_1 snap_044 [total]: z=2.002, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16248215, PartType1=16777216, PartType4=217150, PartType5=975
+  EX_2 snap_044 [total]: z=2.002, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16444556, PartType1=16777216, PartType4=6917, PartType5=953
+  EX_3 snap_044 [total]: z=2.002, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15016459, PartType1=16777216, PartType4=1613206, PartType5=1034
+  saved plots/ex_matter_pk_test/Pk_snap_044.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_044.png
+
+=== matter P(k), snap_050, field=total ===
+ scan ex
+  EX_0 snap_050 [total]: z=1.601, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16164894, PartType1=16777216, PartType4=308100, PartType5=1072
+  EX_1 snap_050 [total]: z=1.601, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16180361, PartType1=16777216, PartType4=277092, PartType5=1078
+  EX_2 snap_050 [total]: z=1.601, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16430820, PartType1=16777216, PartType4=5153, PartType5=1057
+  EX_3 snap_050 [total]: z=1.601, nk=38, Omega0=0.3, sigma8=0.8, PartType0=14529321, PartType1=16777216, PartType4=2124179, PartType5=1107
+  saved plots/ex_matter_pk_test/Pk_snap_050.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_050.png
+
+=== matter P(k), snap_060, field=total ===
+ scan ex
+  EX_0 snap_060 [total]: z=1.048, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16030750, PartType1=16777216, PartType4=429988, PartType5=1154
+  EX_1 snap_060 [total]: z=1.048, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16052536, PartType1=16777216, PartType4=366008, PartType5=1168
+  EX_2 snap_060 [total]: z=1.048, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16373392, PartType1=16777216, PartType4=4531, PartType5=1117
+  EX_3 snap_060 [total]: z=1.048, nk=38, Omega0=0.3, sigma8=0.8, PartType0=13770158, PartType1=16777216, PartType4=2962463, PartType5=1190
+  saved plots/ex_matter_pk_test/Pk_snap_060.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_060.png
+
+=== matter P(k), snap_072, field=total ===
+ scan ex
+  EX_0 snap_072 [total]: z=0.537, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15880188, PartType1=16777216, PartType4=541520, PartType5=1203
+  EX_1 snap_072 [total]: z=0.537, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15901215, PartType1=16777216, PartType4=443246, PartType5=1232
+  EX_2 snap_072 [total]: z=0.537, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16287735, PartType1=16777216, PartType4=3490, PartType5=1168
+  EX_3 snap_072 [total]: z=0.537, nk=38, Omega0=0.3, sigma8=0.8, PartType0=12925098, PartType1=16777216, PartType4=3982138, PartType5=1248
+  saved plots/ex_matter_pk_test/Pk_snap_072.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_072.png
+
+=== matter P(k), snap_080, field=total ===
+ scan ex
+  EX_0 snap_080 [total]: z=0.270, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15792269, PartType1=16777216, PartType4=597043, PartType5=1243
+  EX_1 snap_080 [total]: z=0.270, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15810133, PartType1=16777216, PartType4=484867, PartType5=1259
+  EX_2 snap_080 [total]: z=0.270, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16227858, PartType1=16777216, PartType4=3311, PartType5=1167
+  EX_3 snap_080 [total]: z=0.270, nk=38, Omega0=0.3, sigma8=0.8, PartType0=12475689, PartType1=16777216, PartType4=4558577, PartType5=1254
+  saved plots/ex_matter_pk_test/Pk_snap_080.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_080.png
+
+=== matter P(k), snap_090, field=total ===
+ scan ex
+  EX_0 snap_090 [total]: z=0.000, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15690547, PartType1=16777216, PartType4=650020, PartType5=1229
+  EX_1 snap_090 [total]: z=0.000, nk=38, Omega0=0.3, sigma8=0.8, PartType0=15717265, PartType1=16777216, PartType4=523903, PartType5=1233
+  EX_2 snap_090 [total]: z=0.000, nk=38, Omega0=0.3, sigma8=0.8, PartType0=16161223, PartType1=16777216, PartType4=3689, PartType5=1149
+  EX_3 snap_090 [total]: z=0.000, nk=38, Omega0=0.3, sigma8=0.8, PartType0=12022834, PartType1=16777216, PartType4=5118778, PartType5=1232
+  saved plots/ex_matter_pk_test/Pk_snap_090.png
+  saved plots/ex_matter_pk_test/Pk_ratio_snap_090.png
+
+All outputs under /work/11170/roy/CGM/plots/ex_matter_pk_test
+[matter_pk_ex] finished in 00:10:23  (status 0)
+TIMING job=3402677 task=0 sim=matter_pk_ex snap=all step=matter_pk_ex status=0 seconds=623 elapsed=00:10:23
+[total] 00:10:23
+TIMING job=3402677 task=0 sim=matter_pk_ex snap=all step=total status=0 seconds=623 elapsed=00:10:23

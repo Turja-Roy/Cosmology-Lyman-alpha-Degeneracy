@@ -5,11 +5,17 @@ CV_0..CV_26 share the fiducial cosmology and astrophysics and differ only in IC
 seed, so the scatter across them is the cosmic variance of a 25 Mpc/h box.
 
 Per observable and snapshot:
-    sigma          std / |mean| over the 27 boxes
-    pair_sigma     sqrt(2) * sigma, expected difference between two boxes
-    significance   matched-S_8 gap (degeneracy_test) / pair_sigma
-    ex0_p1_offset  |EX_0 / 1P_p1_0 - 1|, the earlier two-box estimate
+    sigma                std / |mean| over the 27 boxes
+    pair_sigma           sqrt(2) * sigma, expected difference between two boxes
+    significance         matched-S_8 gap (degeneracy_test) / pair_sigma
+    sigma_robust         1.4826 MAD / |median|, insensitive to a few extreme boxes
+    significance_robust  the same gap / (sqrt(2) * sigma_robust)
+    outliers             boxes more than 5 robust sigmas from the median
+    ex0_p1_offset        |EX_0 / 1P_p1_0 - 1|, the earlier two-box estimate
 The same is done for the redshift-evolution index of tau_eff and <F>.
+
+At z=4, TNG's AGN radiation field lowers the neutral fraction across much of CV_10 and CV_18
+(scripts/check_snapshot.py); the robust sigma shows the scatter without them.
 
 p1 and p2 share one seed, so their gap is not itself limited by cosmic variance;
 the significance says whether the gap would hold in a different realisation.
@@ -33,6 +39,7 @@ from hypothesis_test_p1 import load_snap_row, load_cosmo_table, _setup_style, _s
 from degeneracy_test import _obs_extractors, scan_record, _norm_to_fid, _matched_s8_gap
 from feedback_robustness import ratio, _obs_style, DEFAULT_SNAPS, COSMO_SCANS
 
+# CV_2, CV_8, CV_17 ran Arepo commit fc131931 (2021); the other CV runs, 1P and EX ran 4ab97a2c (2016).
 CV_SIMS = [f'CV_{i}' for i in range(27)]
 EVO_OBS = ('tau_eff', 'mean_flux')
 
@@ -43,6 +50,24 @@ def frac_sigma(vals):
     if v.size < 2 or not np.all(np.isfinite(v)) or v.mean() == 0:
         return np.nan
     return float(v.std(ddof=1) / abs(v.mean()))
+
+
+def frac_sigma_robust(vals):
+    """1.4826 MAD / |median|, equal to std / |mean| for Gaussian scatter. NaN as frac_sigma."""
+    v = np.asarray(vals, float)
+    if v.size < 2 or not np.all(np.isfinite(v)) or np.median(v) == 0:
+        return np.nan
+    med = np.median(v)
+    return float(1.4826 * np.median(np.abs(v - med)) / abs(med))
+
+
+def outliers(vals, n_sigma=5.0):
+    """CV boxes further than n_sigma robust sigmas from the median."""
+    v = np.asarray(vals, float)
+    s = frac_sigma_robust(v) * abs(np.median(v))
+    if not np.isfinite(s) or s == 0:
+        return []
+    return [CV_SIMS[i] for i in np.flatnonzero(np.abs(v - np.median(v)) > n_sigma * s)]
 
 
 def evo_index(z, y):
@@ -59,10 +84,15 @@ def frac_offset(a, b):
     return abs(r - 1.0) if np.isfinite(r) else np.nan
 
 
-def summarise(sigma, gap, offset):
+def summarise(vals, gap, offset):
+    """vals: one observable's value in each CV box."""
+    sigma, sigma_r = frac_sigma(vals), frac_sigma_robust(vals)
     pair = np.sqrt(2.0) * sigma
     return {'sigma': sigma, 'pair_sigma': pair,
             'matched_s8_gap': gap, 'significance': ratio(gap, pair),
+            'sigma_robust': sigma_r,
+            'significance_robust': ratio(gap, np.sqrt(2.0) * sigma_r),
+            'outliers': outliers(vals),
             'ex0_p1_offset': offset, 'ex0_p1_offset_in_pair_sigma': ratio(offset, pair)}
 
 
@@ -107,7 +137,7 @@ def build_table(cv, cos, ex0, snaps):
         for s in snaps:
             p1 = cos['p1'][s]
             p1_fid = p1['obs'][name][p1['fid_idx']] if p1['fid_idx'] is not None else np.nan
-            per_snap.append(summarise(frac_sigma(cv[s]['obs'][name]),
+            per_snap.append(summarise(cv[s]['obs'][name],
                                       matched_gap(cos, s, name),
                                       frac_offset(ex0[s]['obs'][name][0], p1_fid)))
         tab['observables'][name] = per_snap
@@ -129,7 +159,7 @@ def build_table(cv, cos, ex0, snaps):
                 p1_fid_idx = idx[fid]
         ex0_idx = evo_index([ex0[s]['z'] for s in snaps], [ex0[s]['obs'][name][0] for s in snaps])
 
-        tab['evolution_index'][name] = summarise(frac_sigma(cv_idx), _matched_s8_gap(curves),
+        tab['evolution_index'][name] = summarise(cv_idx, _matched_s8_gap(curves),
                                                  frac_offset(ex0_idx, p1_fid_idx))
     return tab
 
@@ -139,7 +169,7 @@ def build_table(cv, cos, ex0, snaps):
 # =====================================================================
 
 def plot_sigma(tab, out_path):
-    """pair_sigma per observable vs z, with the earlier EX_0 / 1P_p1_0 offset."""
+    """Robust and standard pair sigma per observable vs z, with the earlier EX_0 / 1P_p1_0 offset."""
     z = np.array(tab['z'])
     labels = {n: lbl for n, (_f, lbl, _lg) in _obs_extractors().items()}
     names = list(tab['observables'])
@@ -151,6 +181,8 @@ def plot_sigma(tab, out_path):
         rec = tab['observables'][name]
         ax.plot(z, [d['pair_sigma'] for d in rec], 'ko-', ms=4,
                 label=r'$\sqrt{2}\,\sigma$ (27 CV boxes)')
+        ax.plot(z, [np.sqrt(2.0) * d['sigma_robust'] for d in rec], 'o--', color='0.6', ms=3,
+                label=r'$\sqrt{2}\,\sigma$, robust')
         ax.plot(z, [d['ex0_p1_offset'] for d in rec], 'x', color='C3', ms=7,
                 label='|EX_0 / 1P_p1_0 - 1|')
         ax.set_yscale('log')
@@ -193,9 +225,15 @@ def plot_significance(tab, out_path):
 
 def self_test():
     rng = np.random.default_rng(0)
-    assert abs(frac_sigma(rng.normal(2.0, 0.1, 20000)) - 0.05) < 0.002
+    x = rng.normal(2.0, 0.1, 20000)
+    assert abs(frac_sigma(x) - 0.05) < 0.002
+    assert abs(frac_sigma_robust(x) - 0.05) < 0.003
     assert np.isnan(frac_sigma([1.0, np.nan, 1.2]))
     assert np.isnan(frac_sigma([-1.0, 1.0]))
+
+    v = np.r_[np.linspace(0.97, 1.03, 25), 2.0, 1.5]      # two extreme boxes, like z=4
+    assert frac_sigma(v) > 0.1 and frac_sigma_robust(v) < 0.04
+    assert outliers(v) == ['CV_25', 'CV_26']
 
     z = np.array([3.0, 2.0, 1.0, 0.0])
     assert abs(evo_index(z, (1 + z) ** 2.3) - 2.3) < 1e-9
@@ -203,7 +241,9 @@ def self_test():
 
     assert abs(frac_offset(1.1, 1.0) - 0.1) < 1e-12
     assert np.isnan(frac_offset(1.0, 0.0))
-    assert abs(summarise(0.05, 0.3, 0.1)['significance'] - 0.3 / (np.sqrt(2) * 0.05)) < 1e-12
+    d = summarise(v, 0.3, 0.1)
+    assert abs(d['significance'] - 0.3 / (np.sqrt(2) * d['sigma'])) < 1e-12
+    assert abs(d['significance_robust'] - 0.3 / (np.sqrt(2) * d['sigma_robust'])) < 1e-12
 
     cv = {'snap-080': {'obs': {'tau_eff': np.r_[np.ones(26), np.nan]}}}
     cos = {sc: {'snap-080': {'rows': []}} for sc in COSMO_SCANS}
@@ -270,6 +310,12 @@ def main():
     for name, d in tab['evolution_index'].items():
         print(f"  {name + ' index':12s} {d['significance']:6.2f}   "
               f"(pair_sigma {d['pair_sigma']:.4f}, EX_0 vs 1P_p1_0: {d['ex0_p1_offset_in_pair_sigma']:.2f})")
+
+    print('\nOutlier boxes (> 5 robust sigmas, any observable):')
+    for i, s in enumerate(tab['snaps']):
+        boxes = sorted({b for rec in tab['observables'].values() for b in rec[i]['outliers']})
+        if boxes:
+            print(f"  {s} (z = {tab['z'][i]:.2f}): {', '.join(boxes)}")
     return 0
 
 

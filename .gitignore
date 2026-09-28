@@ -25,3 +25,7 @@ scripts/*.so
 
 # Third-party
 # third_party/
+
+# Cluster logs and scripts
+logs/
+shell_scripts/

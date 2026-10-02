@@ -31,6 +31,9 @@ from pathlib import Path
 
 import numpy as np
 import h5py
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 import observations as obs
 from statistical_tests import kolmogorov_smirnov_test, uniformity_test
@@ -107,6 +110,55 @@ def mock_rows(tau, dv_sim, z_sim, wave, err, good, n_mocks, snr_resel=None, fwhm
         chunks.append(row)
         absorbers.extend(recs)
     return chunks, absorbers
+
+
+def plot_spectra(wave, flux, err, good, sims, out_path, n_panels=4, chunk=None,
+                 snr_resel=None, fwhm_kms=17.0, kernel=None, uvb_factor=1.0, seed=11):
+    """The observed spectrum with forward-modelled sightlines stacked below it.
+
+    Mocks are different patches of universe, so no line matches line for line. What this
+    shows is whether they are the same kind of spectrum: same pixel scale, same noise, same
+    line density and depth. It is the check every summary statistic is a compression of.
+    """
+    rng = np.random.default_rng(seed)
+    z_sims = np.array([s[1] for s in sims])
+    dv_chunk = obs.box_velocity_length(25000.0, np.median(wave[good]) / obs.LYA - 1.0)
+    slices = obs.chunk_slices(wave, good, dv_chunk)
+    sl = slices[len(slices) // 2 if chunk is None else chunk]
+
+    w, f, e, g = wave[sl], flux[sl], err[sl], good[sl]
+    z_mid = 0.5 * (w[0] + w[-1]) / obs.LYA - 1.0
+    tau_sim, z_sim, dv_sim = sims[int(np.argmin(np.abs(z_sims - z_mid)))]
+
+    fig, axes = plt.subplots(n_panels + 1, 1, figsize=(11, 1.7 * (n_panels + 1)),
+                             sharex=True, sharey=True)
+    axes[0].step(w, f, where='mid', color='C3', lw=0.8)
+    axes[0].fill_between(w, -e, e, step='mid', color='C3', alpha=0.25, lw=0)
+    axes[0].fill_between(w, 0, 1.6, where=~g, color='0.85', step='mid', lw=0)
+    axes[0].set_ylabel('observed', fontsize=9)
+
+    for ax, i in zip(axes[1:], rng.choice(len(tau_sim), size=n_panels, replace=False)):
+        mock, sigma = obs.forward_model(
+            tau_sim[i], dv_sim, z_sim, w,
+            snr_resel=np.inf if snr_resel is None else snr_resel,
+            sigma=e if snr_resel is None else None,
+            fwhm_kms=fwhm_kms, kernel=kernel, uvb_factor=uvb_factor, rng=rng)
+        ax.step(w, mock, where='mid', color='C0', lw=0.8)
+        ax.fill_between(w, -sigma, sigma, step='mid', color='C0', alpha=0.25, lw=0)
+        ax.set_ylabel(f'sightline {i}', fontsize=9)
+
+    for ax in axes:
+        ax.axhline(1.0, color='0.5', lw=0.6, ls=':')
+        ax.set_ylim(-0.15, 1.6)
+        ax.grid(alpha=0.2)
+    axes[-1].set_xlabel(r'observed wavelength [$\AA$]')
+    axes[0].set_title(f'PG1048 chunk at z = {z_mid:.3f} and mocks from snapshot z = {z_sim:.3f}'
+                      f'  ({"observed errors" if snr_resel is None else f"S/N {snr_resel:g}"})')
+    fig.tight_layout()
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f'  saved {out_path}')
 
 
 def compare(wave, flux, err, good, sims, n_mocks=500, snr_resel=None, uvb_factor=1.0,
@@ -315,6 +367,8 @@ def main():
             uvb_factor=args.uvb, continuum_error=args.continuum_error,
             fwhm_kms=fwhm, kernel=kernel)
 
+        plot_spectra(wave, flux, err, good, sims, f'{args.out_dir}/{tag}_spectra.png',
+                     snr_resel=snr, fwhm_kms=fwhm, kernel=kernel, uvb_factor=args.uvb)
         write_csv(rows, f'{args.out_dir}/{tag}_chunks.csv')
         write_csv(sim_rows, f'{args.out_dir}/{tag}_sim_chunks.csv')
         write_csv(obs_abs, f'{args.out_dir}/{tag}_obs_absorbers.csv')

@@ -93,12 +93,18 @@ def chunk_slices(wave, good, dv_chunk, min_good_frac=0.5):
     return out
 
 
-def tau_eff(flux, good, floor=1e-3):
-    """Effective optical depth, -ln<F>, over the unmasked pixels."""
+def tau_eff(flux, good):
+    """Effective optical depth, -ln<F>, over the unmasked pixels.
+
+    A mean flux at or below zero is not a measurement of anything, so it returns NaN rather
+    than a floored stand-in: a clamped value looks like data and propagates into medians and
+    percentiles as if it were one.
+    """
     f = flux[good]
     if f.size == 0:
         return np.nan
-    return -np.log(max(np.mean(f), floor))
+    mean = np.mean(f)
+    return -np.log(mean) if mean > 0 else np.nan
 
 
 def flux_pdf(flux, good, bins=np.linspace(-0.1, 1.3, 29)):
@@ -132,18 +138,36 @@ def find_absorbers(wave, flux, err, good, n_sigma=2.0, min_pixels=2, ew_sigma=3.
     return keep
 
 
-def equivalent_widths(wave, flux, err, good, n_sigma=2.0, min_pixels=2):
-    """Rest-frame equivalent width [mA] of each absorber, and its Lyman-alpha redshift."""
+def absorber_properties(wave, flux, err, good, n_sigma=2.0, min_pixels=2):
+    """One record per detected absorber: EW, redshift, velocity width, depth, S/N.
+
+    These are the fitting-free stand-ins for a Voigt catalogue. EW against width is the
+    plane the b-N diagram would occupy, and the minimum flux shows saturation, which the
+    LSF pushes upwards by filling in line cores.
+    """
     dlam = np.gradient(wave)
-    ew, z_abs = [], []
+    dv = velocity_width(wave)
+    out = []
     for sl in find_absorbers(wave, flux, err, good, n_sigma, min_pixels):
-        w = wave[sl]
-        depth = 1.0 - flux[sl]
+        w, depth = wave[sl], 1.0 - flux[sl]
         centre = np.average(w, weights=np.clip(depth, 0, None) + 1e-12)
         z = centre / LYA - 1.0
-        ew.append(1e3 * np.sum(depth * dlam[sl]) / (1 + z))
-        z_abs.append(z)
-    return np.array(ew), np.array(z_abs)
+        ew_obs = np.sum(depth * dlam[sl])
+        ew_err = np.sqrt(np.sum((err[sl] * dlam[sl]) ** 2))
+        out.append({
+            'ew': 1e3 * ew_obs / (1 + z),          # rest-frame, mA
+            'z': z,
+            'width': float(dv[sl].sum()),          # km/s of absorbed pixels
+            'depth': float(1.0 - np.min(flux[sl])),
+            'ew_snr': float(ew_obs / ew_err) if ew_err > 0 else np.nan,
+        })
+    return out
+
+
+def equivalent_widths(wave, flux, err, good, n_sigma=2.0, min_pixels=2):
+    """Rest-frame equivalent widths [mA] and redshifts, as plain arrays."""
+    recs = absorber_properties(wave, flux, err, good, n_sigma, min_pixels)
+    return (np.array([r['ew'] for r in recs]), np.array([r['z'] for r in recs]))
 
 
 def gap_lengths(wave, flux, err, good, n_sigma=2.0, min_pixels=2):
@@ -177,6 +201,27 @@ def chunk_statistics(wave, flux, err, good, dv_chunk, min_good_frac=0.5):
 
 
 # ------------------------------------------------------------------ forward model
+
+
+def convolve_kernel(flux, dv_pixel, kernel_weights, kernel_dv):
+    """Convolve with a tabulated kernel given on its own velocity spacing.
+
+    The COS LSF is tabulated per native detector pixel, not per simulation pixel, so the
+    kernel is resampled onto the simulation's grid before use. Its wings are what a Gaussian
+    of the same width misses, and they are the reason weak lines blend.
+    """
+    w = np.asarray(kernel_weights, dtype=float)
+    centre = (len(w) - 1) / 2.0
+    v_kernel = (np.arange(len(w)) - centre) * kernel_dv
+    half = np.ceil(np.abs(v_kernel).max() / dv_pixel)
+    v_out = np.arange(-half, half + 1) * dv_pixel
+    k = np.interp(v_out, v_kernel, w, left=0.0, right=0.0)
+    if k.sum() <= 0:
+        return flux
+    k /= k.sum()
+    pad = len(k) // 2
+    padded = np.concatenate([flux[-pad:], flux, flux[:pad]])  # sightlines are periodic
+    return np.convolve(padded, k, mode='same')[pad:-pad]
 
 
 def gaussian_lsf(flux, dv_pixel, fwhm_kms):
@@ -229,7 +274,7 @@ def noise_sigma(flux, wave, snr_resel, fwhm_kms, floor=0.05):
 
 
 def forward_model(tau, dv_pixel, z, wave_out, snr_resel=np.inf, fwhm_kms=17.0,
-                  uvb_factor=1.0, continuum_error=0.0, sigma=None, rng=None):
+                  uvb_factor=1.0, continuum_error=0.0, sigma=None, kernel=None, rng=None):
     """Turn one simulated sightline into a mock observed spectrum on `wave_out`.
 
     `tau` is optical depth on a grid uniform in velocity with spacing `dv_pixel`, placed at
@@ -241,7 +286,10 @@ def forward_model(tau, dv_pixel, z, wave_out, snr_resel=np.inf, fwhm_kms=17.0,
     """
     rng = np.random.default_rng() if rng is None else rng
     flux = np.exp(-uvb_factor * np.asarray(tau, dtype=float))
-    flux = gaussian_lsf(flux, dv_pixel, fwhm_kms)
+    if kernel is not None:
+        flux = convolve_kernel(flux, dv_pixel, kernel[0], kernel[1])
+    else:
+        flux = gaussian_lsf(flux, dv_pixel, fwhm_kms)
 
     # The box is a velocity interval; hang it at z, centred on the output window. A window
     # longer than the box is covered by repeating the sightline, which is periodic anyway --
@@ -287,6 +335,13 @@ def self_test():
     width = lambda f: np.sum(1 - f) / (1 - f.min())
     assert width(smeared) > 1.4 * width(sharp)
     assert smeared.min() > sharp.min()  # core filled in, the reason weak lines get lost
+
+    # A tabulated kernel that happens to be Gaussian reproduces the Gaussian path.
+    k_dv = 3.0
+    k_v = (np.arange(41) - 20) * k_dv
+    k_w = np.exp(-0.5 * (k_v / (30.0 / 2.35482)) ** 2)
+    tabulated = convolve_kernel(sharp, dv, k_w, k_dv)
+    assert np.max(np.abs(tabulated - smeared)) < 0.02, np.max(np.abs(tabulated - smeared))
 
     # Rebinning conserves the integral.
     wave_in = np.linspace(1300, 1310, 4001)

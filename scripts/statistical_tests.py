@@ -8,6 +8,21 @@ def kolmogorov_smirnov_test(data1, data2):
     return {'statistic': float(statistic), 'pvalue': float(pvalue)}
 
 
+def uniformity_test(values, lo=0.0, hi=100.0):
+    """One-sample KS against a uniform distribution.
+
+    Where each observed chunk falls inside its own simulated distribution is uniform on
+    (lo, hi) if the simulation is right. Testing that is the small-sample question; pooling
+    the observed values against every mock instead mixes redshifts and noise levels.
+    """
+    v = np.asarray(values, dtype=float)
+    v = v[np.isfinite(v)]
+    if v.size < 3:
+        return {'statistic': float('nan'), 'pvalue': float('nan'), 'n': int(v.size)}
+    statistic, pvalue = stats.kstest((v - lo) / (hi - lo), 'uniform')
+    return {'statistic': float(statistic), 'pvalue': float(pvalue), 'n': int(v.size)}
+
+
 def mann_whitney_test(data1, data2):
     """Mann-Whitney U test for median differences."""
     statistic, pvalue = stats.mannwhitneyu(data1.flatten(), data2.flatten(), alternative='two-sided')

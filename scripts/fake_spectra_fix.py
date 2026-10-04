@@ -23,7 +23,7 @@ def apply_fake_spectra_bugfixes():
         
         # FIX 2: float32/float64 type casting
         def _do_interpolation_work_fixed(self, pos, vel, elem_den, temp, hh, amumass, line, get_tau):
-            """Run the interpolation with proper float32 casting (fixed for Python 3.13)"""
+            """Run the interpolation, casting arrays to whatever width the C build wants."""
             if self.turn_off_selfshield:
                 gamma_X = 0
             else:
@@ -39,18 +39,25 @@ def apply_fake_spectra_bugfixes():
             amumass_f32 = np.float32(amumass)
             tautail = np.float32(self.tautail)
             
-            # Ensure all array parameters are float32 (except cofm which needs float64)
-            pos = np.asarray(pos, dtype=np.float32)
-            vel = np.asarray(vel, dtype=np.float32)
-            elem_den = np.asarray(elem_den, dtype=np.float32)
-            temp = np.asarray(temp, dtype=np.float32)
-            hh = np.asarray(hh, dtype=np.float32)
+            # Which float width the C extension accepts depends on how it was built:
+            # py_module.cpp checks pos/vel/dens/temp/h against one type and raises
+            # TypeError on the other. Current builds want float64; older ones wanted
+            # float32, so try the wide one and fall back rather than pinning a version.
             axis = np.asarray(self.axis, dtype=np.int32)
-            cofm = np.asarray(self.cofm, dtype=np.float64)  # cofm must be float64!
-            
-            return _PI_original(get_tau*1, self.nbins, self.kernel_int, box, velfac, atime, 
-                                lambda_X, gamma_X_f32, fosc_X, amumass_f32, tautail, 
-                                pos, vel, elem_den, temp, hh, axis, cofm)
+            cofm = np.asarray(self.cofm, dtype=np.float64)  # cofm is always float64
+
+            def _call(dtype):
+                return _PI_original(get_tau*1, self.nbins, self.kernel_int, box, velfac, atime,
+                                    lambda_X, gamma_X_f32, fosc_X, amumass_f32, tautail,
+                                    np.asarray(pos, dtype=dtype), np.asarray(vel, dtype=dtype),
+                                    np.asarray(elem_den, dtype=dtype),
+                                    np.asarray(temp, dtype=dtype),
+                                    np.asarray(hh, dtype=dtype), axis, cofm)
+
+            try:
+                return _call(np.float64)
+            except TypeError:
+                return _call(np.float32)
         
         spectra.Spectra._do_interpolation_work = _do_interpolation_work_fixed
         

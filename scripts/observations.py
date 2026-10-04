@@ -20,6 +20,7 @@ Run:
 
 import argparse
 import sys
+from pathlib import Path
 
 import numpy as np
 
@@ -41,6 +42,52 @@ def load_spectrum(path):
     wave, flux, err = np.loadtxt(path, unpack=True)
     order = np.argsort(wave)
     return wave[order], flux[order], err[order]
+
+
+def load_cos_list(path):
+    """Read the collaborator's sightline table.
+
+    Each row is: name, z_em, the overall usable range, then up to seven sub-ranges, then a
+    trailing pair. The sub-ranges are her masking: for ton580 they exclude 1258.7-1261.0
+    (Si II 1260), 1283.6-1307.5 (O I 1302 + Si II 1304), 1333.8-1336.0 (C II 1334) and
+    1525.9-1527.2 (Si II 1526), and start redward of the damped Galactic Lyman-alpha. That is
+    per sightline and supersedes the generic MW_LINES list. Zero pairs are padding.
+
+    The trailing pair sits inside a usable sub-range and carries ordinary data and errors, so
+    it is not a detector gap; its purpose is unconfirmed (possibly where S/N was measured) and
+    it is returned as `extra` without being applied.
+    """
+    out = {}
+    for line in Path(path).read_text().splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        name = parts[0]
+        try:
+            values = [float(p) for p in parts[1:]]
+        except ValueError:
+            continue
+        z_em, bounds = values[0], values[1:]
+        pairs = [(bounds[i], bounds[i + 1]) for i in range(0, len(bounds) - 1, 2)]
+        windows = [(lo, hi) for lo, hi in pairs[1:-1] if hi > lo > 0]
+        out[name] = {'z_em': z_em, 'range': pairs[0] if pairs else None,
+                     'windows': windows, 'extra': pairs[-1] if len(pairs) > 1 else None}
+    return out
+
+
+def mask_from_windows(wave, err, windows, z_em, proximity=3000.0, z_min=0.0):
+    """Usable Lyman-alpha pixels given explicit wavelength windows.
+
+    The windows already exclude the Galactic lines, so only the zero-error pixels, the
+    Lyman-alpha range itself and the quasar's proximity zone still have to be cut.
+    """
+    good = np.zeros_like(wave, dtype=bool)
+    for lo, hi in windows:
+        good |= (wave >= lo) & (wave <= hi)
+    good &= err > 0
+    good &= wave >= LYA * (1 + z_min)
+    good &= wave <= LYA * (1 + z_em) * (1 - proximity / C_KMS)
+    return good
 
 
 def usable_mask(wave, err, z_em, mw_halfwidth=100.0, proximity=3000.0, z_min=0.0):
@@ -389,6 +436,27 @@ def self_test():
     assert slices and all(a.stop <= b.start for a, b in zip(slices, slices[1:]))
     rows = chunk_statistics(wave, flux, err, good, dv_chunk)
     assert all(abs(r['tau_eff']) < 1e-9 for r in rows)
+
+    # cos.list parsing: padding pairs dropped, windows kept, z_em read.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / 'cos.list'
+        p.write_text('ton580 0.29010 1219.0 1542.0  1219.0 1258.7  1261.0 1283.6  '
+                     '0 0  0 0  0 0  0 0  1423.3 1426.8\n'
+                     'bad_row 0.1\n')
+        table = load_cos_list(p)
+        assert set(table) == {'ton580'}, table
+        row = table['ton580']
+        assert abs(row['z_em'] - 0.2901) < 1e-9
+        assert row['windows'] == [(1219.0, 1258.7), (1261.0, 1283.6)], row['windows']
+        assert row['extra'] == (1423.3, 1426.8)
+
+        w = np.arange(1200.0, 1500.0, 0.05)
+        e = np.full_like(w, 0.1)
+        g = mask_from_windows(w, e, row['windows'], row['z_em'])
+        assert g[np.argmin(np.abs(w - 1240.0))]
+        assert not g[np.argmin(np.abs(w - 1260.0))]   # between her windows
+        assert not g[np.argmin(np.abs(w - 1210.0))]   # blueward of the first window
 
     print(f"observations self-test passed ({len(slices)} chunks of {dv_chunk:.0f} km/s)")
 

@@ -119,7 +119,9 @@ def cmd_analyze(args):
             tau_path = f'tau/{elem}/{ion}/{wave}'
 
             if tau_path in f:
-                tau = f[tau_path][:]
+                # float32 on read: the kernels cast to it anyway and the float64 copy
+                # is 1.86 GiB per array at 10000 x 25000.
+                tau = f[tau_path].astype(np.float32)[:]
                 print(f"Loading {name} ({elem} {ion} {wave}Å)")
             else:
                 print(f"Error: {name} not found in file at {tau_path}")
@@ -129,13 +131,13 @@ def cmd_analyze(args):
         else:
             # Try new format: tau/H/1/1215 (Lyman-alpha)
             if 'tau/H/1/1215' in f:
-                tau = f['tau/H/1/1215'][:]
+                tau = f['tau/H/1/1215'].astype(np.float32)[:]
                 tau_path = 'tau/H/1/1215'
                 print("Auto-detected: Lyman-alpha (H I 1215Å)")
 
             # Try old format: direct tau dataset
             elif 'tau' in f and isinstance(f['tau'], h5py.Dataset):
-                tau = f['tau'][:]
+                tau = f['tau'].astype(np.float32)[:]
                 tau_path = 'tau'
                 print("Old format detected: tau dataset")
 
@@ -155,7 +157,7 @@ def cmd_analyze(args):
 
                 tau_dataset = find_first_tau(f['tau'])
                 if tau_dataset is not None:
-                    tau = tau_dataset[:]
+                    tau = tau_dataset.astype(np.float32)[:]
                     tau_path = tau_dataset.name
                     print(f"  Auto-detected: {tau_path}")
                 else:
@@ -179,7 +181,7 @@ def cmd_analyze(args):
                 if len(parts) >= 3:
                     colden_path = f'colden/{parts[1]}/{parts[2]}'
                     if colden_path in f:
-                        colden = f[colden_path][:]
+                        colden = f[colden_path].astype(np.float32)[:]
                         print(f"  Loaded column density data from {colden_path}")
                         print(f"  Using fake_spectra's pre-computed column densities for accuracy")
         except Exception as e:

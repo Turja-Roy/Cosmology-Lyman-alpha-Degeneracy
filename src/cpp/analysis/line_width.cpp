@@ -43,6 +43,25 @@ double compute_residual(
     return residual / n_points;
 }
 
+// A line railing against the width limit is not a measurement: the old code clamped it to
+// 80 km/s instead, which piled roughly a tenth of all simulated lines into a single bin and
+// left a hard edge no real b distribution has. The search now runs to B_SEARCH_MAX and the
+// caller rejects fits that end up on either boundary.
+constexpr double B_SEARCH_MIN = 2.0;
+constexpr double B_SEARCH_MAX = 200.0;
+constexpr double B_GRID_MIN = 5.0;
+constexpr double B_GRID_STEP = 2.0;
+// Largest grid point at or below B_SEARCH_MAX: the search is B_GRID_MIN + k * B_GRID_STEP,
+// so it ends at 199, not 200. Testing against 200 let every railed fit through.
+constexpr double B_GRID_MAX = B_GRID_MIN
+    + B_GRID_STEP * static_cast<int>((B_SEARCH_MAX - B_GRID_MIN) / B_GRID_STEP);
+
+// Railed within one grid step of either end: the minimiser had nowhere further to go, so the
+// width is a bound, not a measurement.
+bool b_is_railed(double b) {
+    return b <= B_GRID_MIN + B_GRID_STEP || b >= B_GRID_MAX - B_GRID_STEP;
+}
+
 bool fit_voigt_profile(
     const double* tau_data,
     const double* v_values,
@@ -56,7 +75,7 @@ bool fit_voigt_profile(
     if (n_points < 10) return false;
     
     double b_guess = fwhm / (2.0 * std::sqrt(std::log(2.0)));
-    b_guess = std::clamp(b_guess, 5.0, 80.0);
+    b_guess = std::clamp(b_guess, B_GRID_MIN, B_GRID_MAX);
     
     double best_error = 1e20;
     double best_b = b_guess;
@@ -69,7 +88,7 @@ bool fit_voigt_profile(
     double V_0 = voigt_at_center * (2.0 * SQRT_LN2) / b_guess;
     double tau_0_guess = tau_peak / V_0;
     
-    for (double b_test = 5.0; b_test <= 80.0; b_test += 2.0) {
+    for (double b_test = B_GRID_MIN; b_test <= B_GRID_MAX; b_test += B_GRID_STEP) {
         double a_test = damping * 1215.67 / b_test;
         double a_scaled_test = a_test * 2.0 * SQRT_LN2;
         
@@ -124,7 +143,8 @@ bool fit_voigt_profile(
         
         for (int ls = 0; ls < 20; ++ls) {
             params_new.tau_0 = std::max(params.tau_0 - alpha * grad_tau * params.tau_0, 0.01);
-            params_new.b = std::clamp(params.b - alpha * grad_b * params.b * 0.1, 2.0, 80.0);
+            params_new.b = std::clamp(params.b - alpha * grad_b * params.b * 0.1,
+                                      B_SEARCH_MIN, B_SEARCH_MAX);
             params_new.v_center = params.v_center - alpha * grad_v;
             
             double new_error = compute_residual(params_new, tau_data, v_values, n_points, damping);
@@ -144,7 +164,8 @@ bool fit_voigt_profile(
     
     double final_error = compute_residual(params, tau_data, v_values, n_points, damping);
     
-    if (final_error > 0.1 || params.b < 2.0 || params.b > 80.0 || params.tau_0 < 0.01) {
+    if (final_error > 0.1 || params.b < B_SEARCH_MIN || params.b > B_SEARCH_MAX
+        || params.tau_0 < 0.01) {
         return false;
     }
     
@@ -154,7 +175,8 @@ bool fit_voigt_profile(
 
 double estimate_b_from_fwhm(double fwhm) {
     if (fwhm < 1.0) return 10.0;
-    return std::clamp(fwhm / (2.0 * std::sqrt(std::log(2.0))), 2.0, 80.0);
+    return std::clamp(fwhm / (2.0 * std::sqrt(std::log(2.0))),
+                      B_SEARCH_MIN, B_SEARCH_MAX);
 }
 
 }
@@ -286,7 +308,10 @@ LineWidthResult compute_line_width_distribution(
                 b = internal::estimate_b_from_fwhm(fwhm);
             }
             
-            b = std::clamp(b, 2.0, 80.0);
+            // Unconstrained width: drop the absorber rather than record the boundary.
+            if (internal::b_is_railed(b)) {
+                continue;
+            }
             
             double N_HI;
             if (colden_line) {

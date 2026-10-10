@@ -41,6 +41,7 @@ EX_LABEL = {
 }
 EX_COLOR = {'EX_0': 'k', 'EX_1': 'C3', 'EX_2': 'C0', 'EX_3': 'C2'}
 OBS_COLOR = 'C1'
+OBS_LABEL = 'observed'
 
 # COS G130M resolution: the observed power spectrum is damped by the LSF above this k.
 COS_FWHM_KMS = 17.0
@@ -118,6 +119,53 @@ def load_set(root, snap, sims=EX_SIMS):
     return out
 
 
+def stack_pdfs(dirs, which):
+    """Sum the per-bin counts of many sightlines into one PDF.
+
+    The PDFs carry raw counts as well as densities, so stacking is a sum over counts and a
+    single renormalisation -- averaging the densities instead would weight a short sightline
+    the same as a long one.
+    """
+    total, edges_lo, edges_hi, centres, key = None, None, None, None, None
+    for d in dirs:
+        table = read_table(Path(d) / f'{which}.csv')
+        if table is None or 'count' not in table:
+            continue
+        if key is None:
+            key = ('flux_bin_center' if 'flux_bin_center' in table else 'log_tau_bin_center')
+            centres = table[key]
+            edges_lo = table[f'{key[:-7]}_low']
+            edges_hi = table[f'{key[:-7]}_high']
+            total = np.zeros_like(table['count'], dtype=float)
+        if table['count'].shape != total.shape:
+            continue                      # a different binning cannot be stacked
+        total += table['count']
+    if total is None or total.sum() == 0:
+        return None
+    width = edges_hi - edges_lo
+    n = total.sum()
+    return {key: centres, 'count': total,
+            'density': total / (n * width),
+            'density_err': np.sqrt(total) / (n * width)}
+
+
+def load_obs_stacked(dirs):
+    """Observed products combined over sightlines, for the overlay plots."""
+    lw = [read_table(Path(d) / 'line_widths.csv') for d in dirs]
+    lw = [t for t in lw if t is not None and 'b_param_km_s' in t]
+    line_widths = None
+    if lw:
+        line_widths = {k: np.concatenate([t[k] for t in lw if k in t])
+                       for k in ('N_HI', 'b_param_km_s')}
+    return {
+        'power_spectrum': None,
+        'flux_pdf': stack_pdfs(dirs, 'flux_pdf'),
+        'tau_pdf': stack_pdfs(dirs, 'tau_pdf'),
+        'line_widths': line_widths,
+        'flux_stats': {},
+    }
+
+
 def load_obs(obs_dir):
     d = Path(obs_dir)
     return {
@@ -181,7 +229,7 @@ def plot_power(ex, obs, out_path, snap, ratio=True):
     if obs is not None:
         k, p = curve(obs['power_spectrum'])
         if k is not None:
-            ax.plot(k, p, color=OBS_COLOR, lw=2.0, marker='o', ms=3, label='observed (PG1048)')
+            ax.plot(k, p, color=OBS_COLOR, lw=2.0, marker='o', ms=3, label=OBS_LABEL)
             if axr is not None and k0 is not None:
                 axr.plot(k, p / np.interp(k, k0, p0), color=OBS_COLOR, lw=1.6, marker='o', ms=3)
 
@@ -225,7 +273,7 @@ def plot_pdf(ex, obs, which, out_path, snap):
         x, y = _first(table, *xcol), _first(table, 'density')
         err = _first(table, 'density_err')
         if x is not None and y is not None:
-            ax.plot(x, y, color=OBS_COLOR, lw=2.0, marker='o', ms=3, label='observed (PG1048)')
+            ax.plot(x, y, color=OBS_COLOR, lw=2.0, marker='o', ms=3, label=OBS_LABEL)
             if err is not None:
                 ax.fill_between(x, y - err, y + err, color=OBS_COLOR, alpha=0.25, lw=0)
 
@@ -263,7 +311,7 @@ def plot_line_widths(ex, obs, out_path, snap):
     if obs is not None:
         x, y = _b_density(obs['line_widths'])
         if x is not None:
-            ax.plot(x, y, color=OBS_COLOR, lw=2.0, marker='o', ms=3, label='observed (PG1048)')
+            ax.plot(x, y, color=OBS_COLOR, lw=2.0, marker='o', ms=3, label=OBS_LABEL)
     ax.axvline(COS_FWHM_KMS, color='0.5', ls=':', lw=1)
     ax.text(COS_FWHM_KMS * 1.05, ax.get_ylim()[1] * 0.5, 'COS resolution',
             rotation=90, fontsize=8, color='0.4', va='top')
@@ -362,6 +410,9 @@ def main():
     parser.add_argument('--ex-root', default='output/analysis/IllustrisTNG/EX')
     parser.add_argument('--obs', default='output/analysis/Obs/pg1048_all',
                         help='obs_analyze output directory; "none" to omit')
+    parser.add_argument('--obs-glob', default=None,
+                        help='stack every matching obs_analyze directory, e.g. '
+                             "'output/analysis/Obs/*' -- counts are summed, not averaged")
     parser.add_argument('--out-dir', default=None, help='default plots/ex_obs/<snap>')
     parser.add_argument('--self-test', action='store_true')
     args = parser.parse_args()
@@ -374,12 +425,22 @@ def main():
     missing = [s for s in EX_SIMS if ex[s]['power_spectrum'] is None]
     if missing:
         print(f"warning: no power_spectrum.csv for {', '.join(missing)} at {args.snap}")
-    obs = None if args.obs.lower() == 'none' else load_obs(args.obs)
-    if obs is not None and obs['power_spectrum'] is None:
-        print(f'warning: no observed CSVs in {args.obs}')
+    if args.obs_glob:
+        global OBS_LABEL
+        import glob as _glob
+        dirs = sorted(d for d in _glob.glob(args.obs_glob) if Path(d).is_dir())
+        obs = load_obs_stacked(dirs)
+        n_px = int(obs['flux_pdf']['count'].sum()) if obs['flux_pdf'] else 0
+        OBS_LABEL = f'observed ({len(dirs)} sightlines)'
+        print(f'stacked {len(dirs)} observed sightlines, {n_px} pixels')
+    else:
+        OBS_LABEL = f'observed ({Path(args.obs).name})'
+        obs = None if args.obs.lower() == 'none' else load_obs(args.obs)
+        if obs is not None and obs['power_spectrum'] is None:
+            print(f'warning: no observed CSVs in {args.obs}')
 
     out_dir = Path(args.out_dir or f'plots/ex_obs/{args.snap}')
-    plot_power(ex, obs, out_dir / 'power_spectrum.png', args.snap)
+    plot_power(ex, obs, out_dir / 'power_spectrum.png', args.snap)   # obs skipped if absent
     plot_pdf(ex, obs, 'flux_pdf', out_dir / 'flux_pdf.png', args.snap)
     plot_pdf(ex, obs, 'tau_pdf', out_dir / 'tau_pdf.png', args.snap)
     plot_line_widths(ex, obs, out_dir / 'line_widths.png', args.snap)

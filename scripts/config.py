@@ -95,7 +95,7 @@ CDDF_SATURATED_REDSHIFT = 4.5
 # CAMEL simulation suites available
 CAMEL_SUITES = {
     'IllustrisTNG': DATA_DIR / "IllustrisTNG",
-    'Simba': DATA_DIR / "Simba",
+    'SIMBA': DATA_DIR / "SIMBA",
     'Astrid': DATA_DIR / "Astrid",
 }
 

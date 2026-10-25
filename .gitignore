@@ -11,7 +11,9 @@ build/
 # Data files
 *.hdf5
 *.hdf5.backup
-spectra/
+/spectra
+data/IllustrisTNG
+data/SIMBA
 
 # Notes and reading materials
 *.md

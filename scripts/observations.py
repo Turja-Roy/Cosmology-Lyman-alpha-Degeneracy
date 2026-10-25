@@ -352,12 +352,58 @@ def forward_model(tau, dv_pixel, z, wave_out, snr_resel=np.inf, fwhm_kms=17.0,
 
     sigma = np.asarray(sigma, dtype=float) if sigma is not None else \
         noise_sigma(flux, wave_out, snr_resel, fwhm_kms)
+    return add_noise(flux, wave_out, sigma, continuum_error, rng)
+
+
+def add_noise(flux, wave, sigma, continuum_error=0.0, rng=None):
+    """Gaussian noise of per-pixel `sigma`, then an optional sinusoidal continuum error.
+
+    Returns (flux, sigma) with zero sigma floored, so a fitter can divide by it.
+    """
+    rng = np.random.default_rng() if rng is None else rng
     flux = flux + rng.normal(0.0, 1.0, flux.shape) * sigma
     if continuum_error > 0:
         phase = rng.uniform(0, 2 * np.pi)
-        span = wave_out[-1] - wave_out[0]
-        flux *= 1.0 + continuum_error * np.sin(2 * np.pi * (wave_out - wave_out[0]) / span + phase)
+        span = wave[-1] - wave[0]
+        flux *= 1.0 + continuum_error * np.sin(2 * np.pi * (wave - wave[0]) / span + phase)
     return flux, np.where(sigma > 0, sigma, 1e-3)
+
+
+# Native COS FUV dispersion [A per detector pixel], the unit the STScI LSF tables are in.
+# ponytail: nominal per grating; cenwaves differ by <1%. Read DISPTAB COEFF if that matters.
+COS_DISPERSION = {'G130M': 0.00997, 'G160M': 0.01223}
+
+
+def load_cos_lsf(path):
+    """An STScI COS LSF table, e.g. aa_LSFTable_G130M_1291_LP1_cn.dat.
+
+    The header row is the wavelength [A] of each column; each column is the kernel at that
+    wavelength, one row per native-pixel offset (-160..+160). Returns (wavelengths, kernels)
+    with every column normalised to unit sum.
+    """
+    with open(path) as fh:
+        waves = np.array(fh.readline().split(), dtype=float)
+    kernels = np.loadtxt(path, skiprows=1)
+    return waves, kernels / kernels.sum(axis=0)
+
+
+def convolve_varying(flux, kernel_id, kernels):
+    """Convolve with a kernel that changes along the spectrum.
+
+    `kernel_id[i]` picks which of `kernels` (odd-length, normalised) applies at pixel i. Each
+    kernel convolves the stretch it owns plus half its width either side, so neighbouring
+    stretches join without a seam; beyond the array the continuum is held at 1. Same scheme as
+    the STScI COS notebook, where the kernel changes every 5 A.
+    """
+    half = max(len(k) for k in kernels) // 2
+    padded = np.concatenate([np.ones(half), flux, np.ones(half)])
+    out = np.empty_like(flux)
+    for j in np.unique(kernel_id):
+        idx = np.flatnonzero(kernel_id == j)
+        lo, hi = idx[0], idx[-1] + 2 * half + 1
+        conv = np.convolve(padded[lo:hi], kernels[j], mode='same')
+        out[idx] = conv[idx - lo + half]
+    return out
 
 
 def box_velocity_length(box_size_ckpc_h, z, h=0.6774, omega_m=0.3089):
@@ -389,6 +435,19 @@ def self_test():
     k_w = np.exp(-0.5 * (k_v / (30.0 / 2.35482)) ** 2)
     tabulated = convolve_kernel(sharp, dv, k_w, k_dv)
     assert np.max(np.abs(tabulated - smeared)) < 0.02, np.max(np.abs(tabulated - smeared))
+
+    # A varying kernel: a delta comes back as the kernel owning its pixel, two kernels join
+    # without a seam on a flat spectrum, and absorption is conserved.
+    narrow, wide = np.exp(-0.5 * (np.arange(-10, 11) / 2.0) ** 2), np.ones(31)
+    narrow, wide = narrow / narrow.sum(), wide / wide.sum()
+    ids = np.repeat([0, 1], 500)
+    delta = np.ones(1000)
+    delta[200] = 0.0
+    assert np.allclose(1 - convolve_varying(delta, ids, [narrow, wide])[190:211], narrow)
+    assert np.allclose(convolve_varying(np.ones(1000), ids, [narrow, wide]), 1.0)
+    dipped = np.ones(1000) - 0.5 * np.exp(-0.5 * ((np.arange(1000) - 250) / 6.0) ** 2)
+    assert abs(np.sum(1 - convolve_varying(dipped, ids, [narrow, wide]))
+               - np.sum(1 - dipped)) < 1e-3 * np.sum(1 - dipped)
 
     # Rebinning conserves the integral.
     wave_in = np.linspace(1300, 1310, 4001)

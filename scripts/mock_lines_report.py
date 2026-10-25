@@ -28,7 +28,7 @@ import vpfit_catalog as vp
 
 SIMS = {'EX_0': 'fiducial', 'EX_1': 'extreme AGN', 'EX_2': 'extreme SN',
         'EX_3': 'no feedback'}
-SNR_LEVELS = ['80', '50', 'data', '10']
+SNR_LEVELS = ['80', '40', '20', 'data', '10']
 LOGN_CUTS = [None, 13.0, 13.2, 13.5]
 # Windows, not floors: the observed catalogue runs to log N = 19.3, and a handful of damped
 # systems dominate any unbounded sum of N.
@@ -36,7 +36,8 @@ LOGN_WINDOWS = [(13.0, 14.0), (13.0, 14.5), (13.2, 15.0), (13.5, 15.0)]
 B_NARROW = 30.0
 MAX_B_ERR = 10.0
 MAX_LOGN_ERR = 0.5
-N_OBS_SIGHTLINES = 52
+N_OBS_SIGHTLINES = 51     # 4c25 has no VPFIT fit
+N_MOCKS = 255             # reset from the mock ids in main()
 COLOURS = {'EX_0': '#1f77b4', 'EX_1': '#d62728', 'EX_2': '#2ca02c', 'EX_3': '#7f3f9f'}
 
 
@@ -205,7 +206,7 @@ def figure_b_vs_logn(obs, mocks, cuts, out_path):
     for ax, key, ylab in ((axes[0], 'median', r'median $b$ [km s$^{-1}$]'),
                           (axes[1], 'frac', r'fraction $b < 30$ km s$^{-1}$')):
         for sim, label in SIMS.items():
-            v = [stats(mocks[sim], c, 200)[key] for c in cuts]
+            v = [stats(mocks[sim], c, N_MOCKS)[key] for c in cuts]
             ax.plot(x, v, 'o-', color=COLOURS[sim], label=label, ms=5)
         v = [stats(obs, c, N_OBS_SIGHTLINES)[key] for c in cuts]
         ax.plot(x, v, 'k^--', label='observed', ms=7, lw=2.0)
@@ -254,9 +255,9 @@ def figure_counts(obs, mocks, mocks_snr10, cuts, out_path):
     fig, ax = plt.subplots(figsize=(7.0, 4.6))
     x = np.arange(len(cuts))
     for sim, label in SIMS.items():
-        v = [stats(mocks[sim], c, 200)['per'] for c in cuts]
+        v = [stats(mocks[sim], c, N_MOCKS)['per'] for c in cuts]
         ax.plot(x, v, 'o-', color=COLOURS[sim], label=label, ms=5)
-    v = [stats(mocks_snr10['EX_0'], c, 200)['per'] for c in cuts]
+    v = [stats(mocks_snr10['EX_0'], c, N_MOCKS)['per'] for c in cuts]
     ax.plot(x, v, 's:', color=COLOURS['EX_0'], label='fiducial, S/N 10', ms=5)
     v = [stats(obs, c, N_OBS_SIGHTLINES)['per'] for c in cuts]
     ax.plot(x, v, 'k^--', label='observed', ms=7, lw=2.0)
@@ -288,7 +289,7 @@ def figure_column(obs, mocks, windows, out_path, cv_std=None):
     ax.axhline(1.0, color='k', lw=1.0)
     for sim, label in SIMS.items():
         o = [summed_column(obs, lo, hi, N_OBS_SIGHTLINES) for lo, hi in windows]
-        s = [summed_column(mocks[sim], lo, hi, 200) for lo, hi in windows]
+        s = [summed_column(mocks[sim], lo, hi, N_MOCKS) for lo, hi in windows]
         ax.plot(x, [a['sumN'] / b['sumN'] for a, b in zip(s, o)], 'o-',
                 color=COLOURS[sim], label=label, ms=5)
         ax.plot(x, [a['per'] / b['per'] for a, b in zip(s, o)], 's--',
@@ -313,15 +314,15 @@ def write_tables(path, obs, by_snr, cuts, disc, windows, cv):
     fid = by_snr['data']['EX_0']
     ladder = []
     for snr in SNR_LEVELS:
-        s = stats(by_snr[snr]['EX_0'], None, 200)
+        s = stats(by_snr[snr]['EX_0'], None, N_MOCKS)
         name = 'own error array' if snr == 'data' else snr
         ladder.append('%s & %.1f & %.1f & %.3f' % (name, s['per'], s['median'], s['frac']))
 
     matched = []
     for c in cuts:
         o = stats(obs, c, N_OBS_SIGHTLINES)
-        d = stats(fid, c, 200)
-        t = stats(by_snr['10']['EX_0'], c, 200)
+        d = stats(fid, c, N_MOCKS)
+        t = stats(by_snr['10']['EX_0'], c, N_MOCKS)
         matched.append('%s & %d & %.1f & %.3f & %.1f & %.3f & %.1f & %.3f'
                        % ('all' if c is None else '$\\geq %.1f$' % c, o['n'], o['median'],
                           o['frac'], d['median'], d['frac'], t['median'], t['frac']))
@@ -338,16 +339,16 @@ def write_tables(path, obs, by_snr, cuts, disc, windows, cv):
     counts = []
     for c in cuts:
         o = stats(obs, c, N_OBS_SIGHTLINES)['per']
-        d = stats(fid, c, 200)['per']
-        t = stats(by_snr['10']['EX_0'], c, 200)['per']
+        d = stats(fid, c, N_MOCKS)['per']
+        t = stats(by_snr['10']['EX_0'], c, N_MOCKS)['per']
         counts.append('%s & %.1f & %.1f & %.1f & %.1f'
                       % ('all' if c is None else '$\\geq %.1f$' % c, o, d, t, t / o))
 
     column = []
     for lo, hi in windows:
         o = summed_column(obs, lo, hi, N_OBS_SIGHTLINES)
-        d = summed_column(fid, lo, hi, 200)
-        t = summed_column(by_snr['10']['EX_0'], lo, hi, 200)
+        d = summed_column(fid, lo, hi, N_MOCKS)
+        t = summed_column(by_snr['10']['EX_0'], lo, hi, N_MOCKS)
         column.append('%.1f--%.1f & %.2f & %.2e & %.2f & %.2f & %.2f & %.2f'
                       % (lo, hi, o['per'], o['sumN'], d['per'] / o['per'],
                          d['sumN'] / o['sumN'], t['per'] / o['per'], t['sumN'] / o['sumN']))
@@ -361,7 +362,7 @@ def write_tables(path, obs, by_snr, cuts, disc, windows, cv):
             fh.write('\\newcommand{\\%s}{%%\n%s}\n\n' % (name, _rows(body)))
         fh.write('\\newcommand{\\mockAssign}{%s}\n'
                  % ', '.join('%s ($\\times %d$)' % (k, v) for k, v in sorted(assign.items())))
-        fh.write('\\newcommand{\\mockNmocks}{%d}\n' % 200)
+        fh.write('\\newcommand{\\mockNmocks}{%d}\n' % N_MOCKS)
         if cv is not None:
             fh.write('\\newcommand{\\cvSeeds}{%d}\n' % cv['n'])
             fh.write('\\newcommand{\\cvMean}{%.4f}\n' % cv['mean'])
@@ -398,7 +399,8 @@ def main():
         by_snr[snr] = {sim: load_mock(root / sim / f'mock_lines_snr-{snr}.csv')
                        for sim in SIMS}
 
-    n_mocks = int(by_snr['data']['EX_0']['mock'].max()) + 1
+    global N_MOCKS
+    n_mocks = N_MOCKS = int(by_snr['data']['EX_0']['mock'].max()) + 1
     disc = {c: paired_bootstrap(by_snr['data'], 'EX_0', c, n_mocks, draws=args.bootstrap)
             for c in (None, 13.2, 13.5)}
 

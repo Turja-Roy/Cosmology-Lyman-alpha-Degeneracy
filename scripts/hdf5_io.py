@@ -22,9 +22,6 @@ def load_snapshot_metadata(filepath):
             'num_dm'        : int(header.attrs['NumPart_ThisFile'][1]),
             'num_stars'     : int(header.attrs['NumPart_ThisFile'][4]),
             'time'          : float(header.attrs['Time']),
-            'unit_length'   : float(header.attrs['UnitLength_in_cm']),
-            'unit_mass'     : float(header.attrs['UnitMass_in_g']),
-            'unit_velocity' : float(header.attrs['UnitVelocity_in_cm_per_s']),
         }
 
         # Derived quantities

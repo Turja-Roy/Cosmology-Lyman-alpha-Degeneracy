@@ -19,7 +19,8 @@ tabulated wavelength. `--lsf gauss` swaps in a Gaussian of `--fwhm` for comparis
 Give it one spectra file per snapshot: every pixel of a mock is drawn from the snapshot
 nearest its own redshift, and the path above `--z-max` is masked on both sides.
 
-S/N rungs are per pixel at the continuum; 'data' uses the template's own error array.
+S/N rungs are per resolution element (RESEL_KMS) at the continuum; 'data' uses the
+template's own error array.
 Output is one CSV of components per rung, with the same columns as the observed VPFIT
 catalogue, and one CSV of per-mock summaries including the pixel flux histogram.
 
@@ -66,6 +67,9 @@ DV_GRID = 1.0
 
 # Same sqrt(F) floor as observations.noise_sigma, for saturated cores.
 NOISE_FLOOR = 0.05
+
+# COS FUV resolution element (R ~ 18000, ~6-7 native pixels), the unit of the S/N rungs.
+RESEL_KMS = 17.0
 
 # Her kernel names, e.g. COS_g130m_L1300_LF1.dat: grating, cenwave, lifetime position. The
 # L/U prefix is not explained in the delivery; both map to the same STScI table.
@@ -130,7 +134,8 @@ def load_templates(pattern, cos_list_path, z_max=Z_MAX):
         out.append({'name': name, 'fit': fit, 'wave': wave, 'flux': flux, 'err': err,
                     'good': good,
                     'z': float(np.median(wave[good])) / voigt_fit.LYA - 1.0,
-                    'snr_pixel': float(np.median(flux[good] / err[good])),
+                    'snr_resel': float(np.median(flux[good] / err[good])
+                                       * np.sqrt(obs.pixels_per_resel(wave, RESEL_KMS))),
                     'regions': regions})
     return out
 
@@ -324,7 +329,8 @@ def _one_mock(job):
     inner = (wave > t['grid'][0]) & (wave < t['grid'][-1])
     flux = np.ones_like(wave)
     flux[inner] = obs.rebin(t['grid'], convolved, wave[inner])
-    sigma = err if snr == 'data' else np.sqrt(np.clip(flux, NOISE_FLOOR, None)) / float(snr)
+    sigma = err if snr == 'data' else obs.noise_sigma(flux, wave, float(snr), RESEL_KMS,
+                                                      NOISE_FLOOR)
     flux, sigma = obs.add_noise(flux, wave, sigma, continuum_error, rng)
 
     rows = measure_mock(wave, flux, sigma, good, t['fwhm'], t)
@@ -569,7 +575,7 @@ def main():
     p.add_argument('--cos-list', default='data/Obs/cos.list')
     p.add_argument('--n', type=int, default=255, help='mock sightlines per rung')
     p.add_argument('--snr', action='append', default=[],
-                   help="'data' for the template's own errors, or S/N per pixel; repeatable")
+                   help="'data' for the template's own errors, or S/N per resolution element; repeatable")
     p.add_argument('--lsf', choices=['cos', 'gauss'], default='cos')
     p.add_argument('--lsf-dir', default='data/Obs/lsf', help='STScI aa_LSFTable_*_cn.dat files')
     p.add_argument('--fwhm', type=float, default=17.0, help='Gaussian FWHM for --lsf gauss')
@@ -595,7 +601,7 @@ def main():
     snrs = args.snr or ['data']
     for s in snrs:
         if s != 'data' and not (np.isfinite(float(s)) and float(s) > 0):
-            p.error(f"--snr {s}: use 'data' or a finite S/N per pixel; the noiseless "
+            p.error(f"--snr {s}: use 'data' or a finite S/N per resel; the noiseless "
                     "reference is the C++ catalogue in output/analysis")
 
     templates = load_templates(args.templates, args.cos_list, args.z_max)

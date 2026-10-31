@@ -1,5 +1,5 @@
 """
-Every EX variant against the observation, for each S/N rung, TNG beside SIMBA.
+Every EX variant against the observation, for each S/N rung.
 
 Reads the mock catalogues from scripts/sim_mock_lines.py
 (<mock-root>/<suite>/EX_k/[<sub>/]mock_{lines,sightlines}_snr-<rung>.csv) and the observed
@@ -10,18 +10,24 @@ windows, outside the proximity zone, z <= z_max. The absorption path dX comes fr
 windows on both sides, since a mock covers exactly its template's path; the flux pixels come
 from the same masks.
 
-Rows are S/N rungs. In the 'data' row every mock carries its template's own errors and the
-observation is the whole sample. In a fixed-S/N row the observation is the subset of
-sightlines whose own S/N per pixel falls in that rung's bin (edges at the geometric midpoints
-between rungs), and the mocks are restricted to the same templates, so path, redshift mix and
-masking match as well as noise. The full observed sample is drawn dashed for reference.
+Rows are S/N rungs, per resolution element. In the 'data' row every mock carries its
+template's observed error array and the observation is the whole sample. In a fixed-S/N row
+the observation is the subset of sightlines whose own S/N per resel falls in that rung's bin
+(edges at the geometric midpoints between rungs); the mocks are all of them, so only the noise
+changes down a column. The full observed sample is drawn dashed for reference.
 
 Bands: simulation, 16-84% over one-survey draws (one mock per template); observation,
 16-84% over a bootstrap of sightlines. Variant-to-variant differences share initial
 conditions and need a paired bootstrap, which these bands are not.
 
-    python scripts/ex_snr_plots.py --mock-root output/obs/mock_lines --out plots/obs/ex_snr
-    python scripts/ex_snr_plots.py --sub uvb_match --out plots/obs/ex_snr_uvb_match
+Output, per suite with mocks:
+    panel_<suite>.png                rows S/N, columns CDDF | flux PDF | b PDF
+    b_N_plane_<suite>.png            rows S/N, columns EX models
+    <sub>_vs_raw/<stat>_<suite>.png  the panel statistics with and without --sub
+    single/<stat>/...                every statistic and rung as its own figure
+
+    python scripts/ex_snr_plots.py                     # uvb_match, compared to raw
+    python scripts/ex_snr_plots.py --sub '' --out plots/obs/ex_snr_raw
     python scripts/ex_snr_plots.py --self-test
 """
 
@@ -36,6 +42,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observations as obs                                       # noqa: E402
@@ -52,8 +59,9 @@ COLOURS = {'EX_0': '#2a78d6', 'EX_1': '#eb6834', 'EX_2': '#1baf7a', 'EX_3': '#ed
 
 LOGN_EDGES = np.round(np.arange(12.0, 17.0 + 1e-9, 0.05), 2)
 B_EDGES = np.arange(0.0, 201.0, 1.0)
-BN_EDGES = np.arange(12.5, 15.5 + 1e-9, 0.25)
-HIST_KEYS = ('logN', 'b', 'bN', 'flux')
+BN_LOGN = np.arange(12.0, 16.0 + 1e-9, 0.1)
+BN_B = np.arange(0.0, 100.0 + 1e-9, 2.0)
+HIST_KEYS = ('logN', 'b', 'flux')
 N_DRAWS = 200
 
 
@@ -67,18 +75,15 @@ def unit_hist(unit, values, edges, n_units):
 
 
 def build_units(names, unit, z, b, logN, flux_counts, dx, b_logn_min):
-    """Per-unit histograms; every statistic is rebuilt from sums of these."""
+    """Per-unit histograms, rebuilt into every statistic by summing, plus the raw lines."""
     n = len(names)
     unit, b, logN = np.asarray(unit, int), np.asarray(b, float), np.asarray(logN, float)
     strong = logN >= b_logn_min
-    bn = np.zeros((n, len(BN_EDGES) - 1, len(B_EDGES) - 1))
-    kn, kb = np.digitize(logN, BN_EDGES) - 1, np.digitize(b, B_EDGES) - 1
-    ok = (kn >= 0) & (kn < bn.shape[1]) & (kb >= 0) & (kb < bn.shape[2])
-    np.add.at(bn, (unit[ok], kn[ok], kb[ok]), 1.0)
     return {'names': np.asarray(names), 'dx': np.asarray(dx, float),
             'logN': unit_hist(unit, logN, LOGN_EDGES, n),
             'b': unit_hist(unit[strong], b[strong], B_EDGES, n),
-            'bN': bn, 'flux': np.asarray(flux_counts, float)}
+            'flux': np.asarray(flux_counts, float),
+            'lines': (unit, logN, b)}
 
 
 def _grouped(counts, edges, group):
@@ -106,34 +111,24 @@ def cddf(h, dx):
         return x, np.where(c > 0, np.log10(f), np.nan)
 
 
-def median_b(h, dx):
-    """Median b in each log N bin, from the per-unit b histograms; NaN below 5 lines."""
-    cum = np.cumsum(h['bN'], -1)
-    tot = cum[..., -1]
-    k = np.argmax(cum >= 0.5 * tot[..., None], axis=-1)
-    x = 0.5 * (BN_EDGES[1:] + BN_EDGES[:-1])
-    return x, np.where(tot >= 5, B_EDGES[k] + 0.5, np.nan)
-
-
 # name -> (curve, x label, y label, log y, x range)
 STATS = {
     'cddf': (cddf, r'$\log N_{\rm HI}$ [cm$^{-2}$]',
              r'$\log f(N_{\rm HI}, X)$', False, (12.0, 17.0)),
-    'logN_pdf': (lambda h, dx: _density(h['logN'], LOGN_EDGES, 2),
-                 r'$\log N_{\rm HI}$', 'PDF', False, (12.0, 16.5)),
-    'logN_cdf': (lambda h, dx: _cdf(h['logN'], LOGN_EDGES),
-                 r'$\log N_{\rm HI}$', 'CDF', False, (12.0, 16.5)),
+    'flux_pdf': (lambda h, dx: _density(h['flux'], FLUX_EDGES, 2),
+                 'normalised flux', 'PDF', True, (-0.1, 1.2)),
     'b_pdf': (lambda h, dx: _density(h['b'], B_EDGES, 5),
               r'$b$ [km s$^{-1}$]', 'PDF', False, (0.0, 120.0)),
     'b_cdf': (lambda h, dx: _cdf(h['b'], B_EDGES),
               r'$b$ [km s$^{-1}$]', 'CDF', False, (0.0, 120.0)),
-    'b_vs_logN': (median_b, r'$\log N_{\rm HI}$', r'median $b$ [km s$^{-1}$]', False,
-                  (12.5, 15.5)),
-    'flux_pdf': (lambda h, dx: _density(h['flux'], FLUX_EDGES, 2),
-                 'normalised flux', 'PDF', True, (-0.1, 1.2)),
+    'logN_pdf': (lambda h, dx: _density(h['logN'], LOGN_EDGES, 2),
+                 r'$\log N_{\rm HI}$', 'PDF', False, (12.0, 16.5)),
+    'logN_cdf': (lambda h, dx: _cdf(h['logN'], LOGN_EDGES),
+                 r'$\log N_{\rm HI}$', 'CDF', False, (12.0, 16.5)),
     'flux_cdf': (lambda h, dx: _cdf(h['flux'], FLUX_EDGES),
                  'normalised flux', 'CDF', False, (-0.1, 1.2)),
 }
+PANEL = ['cddf', 'flux_pdf', 'b_pdf']
 
 
 def evaluate(units, central, draws):
@@ -151,15 +146,15 @@ def evaluate(units, central, draws):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', RuntimeWarning)
         band = {s: np.nanpercentile(np.array(v), [16, 84], axis=0) for s, v in samples.items()}
-    return {'centre': centre, 'band': band}
+    unit, logN, b = units['lines']
+    sel = np.isin(unit, central)
+    return {'centre': centre, 'band': band, 'n': len(central), 'bN': (logN[sel], b[sel])}
 
 
-def mock_draws(names, keep, rng, n=N_DRAWS):
-    """One-survey draws: one mock per selected template."""
-    groups = [np.flatnonzero(names == t) for t in keep]
-    groups = [g for g in groups if g.size]
-    central = np.concatenate(groups) if groups else np.array([], int)
-    return central, [np.array([rng.choice(g) for g in groups]) for _ in range(n)]
+def mock_draws(names, rng, n=N_DRAWS):
+    """All mocks, and one-survey draws of one mock per template."""
+    groups = [np.flatnonzero(names == t) for t in np.unique(names)]
+    return np.arange(names.size), [np.array([rng.choice(g) for g in groups]) for _ in range(n)]
 
 
 def bootstrap_draws(names, keep, rng, n=N_DRAWS):
@@ -167,14 +162,21 @@ def bootstrap_draws(names, keep, rng, n=N_DRAWS):
     return central, [rng.choice(central, size=central.size) for _ in range(n)]
 
 
-def snr_bin(rung, snr_pixel):
-    """Observed sightlines matching a fixed rung: S/N per pixel between the geometric
+def snr_bin(rung, snr_resel):
+    """Observed sightlines matching a fixed rung: S/N per resel between the geometric
     midpoints to the neighbouring rungs."""
     levels = [float(r) for r in RUNGS if r != 'data']
     i = levels.index(float(rung))
     lo = np.sqrt(levels[i - 1] * levels[i]) if i > 0 else 0.0
     hi = np.sqrt(levels[i] * levels[i + 1]) if i + 1 < len(levels) else np.inf
-    return (snr_pixel >= lo) & (snr_pixel < hi)
+    return (snr_resel >= lo) & (snr_resel < hi)
+
+
+def hpd_levels(h, fracs=(0.95, 0.68)):
+    """Histogram heights above which the densest cells hold each fraction of the counts."""
+    s = np.sort(h.ravel())[::-1]
+    c = np.cumsum(s) / max(s.sum(), 1)
+    return [s[min(np.searchsorted(c, f), s.size - 1)] for f in fracs]
 
 
 def in_ranges(z, ranges):
@@ -236,58 +238,170 @@ def mock_units(lines_path, sightlines_path, ranges, dx, b_logn_min):
     return build_units(names, unit, z, b, logN, flux, [dx[n] for n in names], b_logn_min)
 
 
-def plot_stat(name, mocks, observed, out_dir):
-    _, xlab, ylab, logy, xlim = STATS[name]
-    fig, axes = plt.subplots(len(RUNGS), len(SUITES), figsize=(10.0, 2.4 * len(RUNGS)),
-                             sharex=True, sharey=True, squeeze=False)
-    for i, rung in enumerate(RUNGS):
-        o = observed[rung]
-        for j, suite in enumerate(SUITES):
-            ax = axes[i, j]
-            drawn = 0
-            for sim in SIMS:
-                r = mocks.get((suite, sim, rung))
-                if r is None:
+def load_mocks(root, sub, ranges, dx, b_logn_min, rng):
+    mocks = {}
+    for suite in SUITES:
+        for sim in SIMS:
+            base = Path(root) / suite / sim / sub
+            for rung in RUNGS:
+                lines = base / f'mock_lines_snr-{rung}.csv'
+                sightlines = base / f'mock_sightlines_snr-{rung}.csv'
+                if not (lines.exists() and sightlines.exists()):
+                    print(f'missing: {lines}')
                     continue
-                x, y = r['centre'][name]
-                lo, hi = r['band'][name]
-                ax.fill_between(x, lo, hi, color=COLOURS[sim], alpha=0.18, lw=0)
-                ax.plot(x, y, color=COLOURS[sim], lw=1.5)
-                drawn += 1
-            if not drawn:
-                ax.text(0.5, 0.5, 'no mocks', transform=ax.transAxes, ha='center',
-                        va='center', color='0.45')
-            if rung != 'data':
-                ax.plot(*observed['data']['centre'][name], color='0.35', lw=1.0, ls='--')
-            x, y = o['centre'][name]
-            lo, hi = o['band'][name]
-            ax.fill_between(x, lo, hi, color='0.55', alpha=0.25, lw=0)
-            ax.plot(x, y, color='k', lw=1.8)
+                units = mock_units(lines, sightlines, ranges, dx, b_logn_min)
+                mocks[(suite, sim, rung)] = evaluate(units, *mock_draws(units['names'], rng))
+    return mocks
 
-            noise = 'own error arrays' if rung == 'data' else f'S/N {rung} per pixel'
-            ax.set_title(f'{suite}: {noise}, {o["n"]} observed sightlines', fontsize=9)
-            ax.set_xlim(*xlim)
-            if logy:
-                ax.set_yscale('log')
-            if name.endswith('_cdf'):
-                ax.set_ylim(0.0, 1.0)
-            ax.grid(alpha=0.2, lw=0.5)
-            if j == 0:
-                ax.set_ylabel(ylab)
-            if i == len(RUNGS) - 1:
-                ax.set_xlabel(xlab)
 
-    handles = [Line2D([], [], color=COLOURS[s], lw=1.5, label=f'{s} {SIMS[s]}') for s in SIMS]
-    handles += [Line2D([], [], color='k', lw=1.8, label='observed, S/N-matched'),
+def noise_label(rung):
+    return 'observed errors' if rung == 'data' else f'S/N {rung} per resel'
+
+
+def title(ax, suite, rung, observed, mocks, sim=None):
+    n_mock = next((m['n'] for (su, s, r), m in mocks.items()
+                   if su == suite and r == rung and sim in (None, s)), 0)
+    head = suite if sim is None else f'{suite} {sim}'
+    ax.set_title(f'{head}: {noise_label(rung)}\n{observed[rung]["n"]} observed / '
+                 f'{n_mock} mock sightlines', fontsize=8)
+
+
+def style(ax, name, first_col=True, last_row=True):
+    _, xlab, ylab, logy, xlim = STATS[name]
+    ax.set_xlim(*xlim)
+    if logy:
+        ax.set_yscale('log')
+    if name.endswith('_cdf'):
+        ax.set_ylim(0.0, 1.0)
+    ax.grid(alpha=0.2, lw=0.5)
+    if first_col:
+        ax.set_ylabel(ylab)
+    if last_row:
+        ax.set_xlabel(xlab)
+
+
+def draw_observed(ax, name, rung, observed):
+    if rung != 'data':
+        ax.plot(*observed['data']['centre'][name], color='0.35', lw=1.0, ls='--')
+    x, y = observed[rung]['centre'][name]
+    lo, hi = observed[rung]['band'][name]
+    ax.fill_between(x, lo, hi, color='0.55', alpha=0.25, lw=0)
+    ax.plot(x, y, color='k', lw=1.8)
+
+
+def draw_stat(ax, name, suite, rung, mocks, observed):
+    for sim in SIMS:
+        r = mocks.get((suite, sim, rung))
+        if r is None:
+            continue
+        x, y = r['centre'][name]
+        lo, hi = r['band'][name]
+        ax.fill_between(x, lo, hi, color=COLOURS[sim], alpha=0.18, lw=0)
+        ax.plot(x, y, color=COLOURS[sim], lw=1.5)
+    draw_observed(ax, name, rung, observed)
+
+
+def draw_compare(ax, name, suite, sim, rung, mocks, raw, observed):
+    for m, ls in ((raw, '-'), (mocks, '--')):
+        r = m.get((suite, sim, rung))
+        if r is not None:
+            ax.plot(*r['centre'][name], color=COLOURS[sim], lw=1.5, ls=ls)
+    draw_observed(ax, name, rung, observed)
+
+
+def draw_bn(ax, suite, sim, rung, mocks, observed):
+    r = mocks.get((suite, sim, rung))
+    if r is not None and r['bN'][0].size:
+        h = np.histogram2d(*r['bN'], [BN_LOGN, BN_B])[0]
+        x, y = 0.5 * (BN_LOGN[1:] + BN_LOGN[:-1]), 0.5 * (BN_B[1:] + BN_B[:-1])
+        for level, alpha in zip(hpd_levels(h), (0.25, 0.45)):
+            ax.contourf(x, y, h.T, levels=[level, h.max() + 1], colors=[COLOURS[sim]],
+                        alpha=alpha)
+    ax.plot(*observed[rung]['bN'], '.', color='k', ms=2.5)
+    ax.set_xlim(BN_LOGN[0], BN_LOGN[-1])
+    ax.set_ylim(BN_B[0], BN_B[-1])
+    ax.grid(alpha=0.2, lw=0.5)
+
+
+def stat_handles():
+    h = [Line2D([], [], color=COLOURS[s], lw=1.5, label=f'{s} {SIMS[s]}') for s in SIMS]
+    return h + [Line2D([], [], color='k', lw=1.8, label='observed, S/N-matched'),
                 Line2D([], [], color='0.35', lw=1.0, ls='--', label='observed, all')]
-    fig.legend(handles=handles, loc='upper center', ncol=3, fontsize=9, frameon=False,
-               bbox_to_anchor=(0.5, 1.0))
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
-    path = Path(out_dir) / f'{name}.png'
+
+
+def save(fig, path, handles=None, ncol=3):
+    if handles:
+        fig.legend(handles=handles, loc='upper center', ncol=ncol, fontsize=8, frameon=False,
+                   bbox_to_anchor=(0.5, 1.0))
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+    else:
+        fig.tight_layout()
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f'  saved {path}')
+
+
+def grid(ncols, width):
+    return plt.subplots(len(RUNGS), ncols, figsize=(width, 2.5 * len(RUNGS)), squeeze=False)
+
+
+def plot_suite(suite, mocks, raw, observed, out, sub):
+    last = len(RUNGS) - 1
+
+    fig, axes = grid(len(PANEL), 4.0 * len(PANEL))
+    for i, rung in enumerate(RUNGS):
+        for j, name in enumerate(PANEL):
+            draw_stat(axes[i, j], name, suite, rung, mocks, observed)
+            title(axes[i, j], suite, rung, observed, mocks)
+            style(axes[i, j], name, True, i == last)
+    save(fig, out / f'panel_{suite}.png', stat_handles())
+
+    bn_handles = [Patch(color=COLOURS[s], alpha=0.5, label=f'{s} {SIMS[s]} (68, 95%)')
+                  for s in SIMS]
+    bn_handles.append(Line2D([], [], ls='', marker='.', color='k',
+                             label='observed lines, S/N-matched'))
+    fig, axes = grid(len(SIMS), 3.2 * len(SIMS))
+    for i, rung in enumerate(RUNGS):
+        for j, sim in enumerate(SIMS):
+            ax = axes[i, j]
+            draw_bn(ax, suite, sim, rung, mocks, observed)
+            title(ax, suite, rung, observed, mocks, sim)
+            if j == 0:
+                ax.set_ylabel(r'$b$ [km s$^{-1}$]')
+            if i == last:
+                ax.set_xlabel(r'$\log N_{\rm HI}$')
+    save(fig, out / f'b_N_plane_{suite}.png', bn_handles, ncol=5)
+
+    if raw:
+        handles = [Line2D([], [], color='0.3', lw=1.5, label='raw'),
+                   Line2D([], [], color='0.3', lw=1.5, ls='--', label=sub)]
+        handles += stat_handles()[len(SIMS):]
+        for name in PANEL:
+            fig, axes = grid(len(SIMS), 3.2 * len(SIMS))
+            for i, rung in enumerate(RUNGS):
+                for j, sim in enumerate(SIMS):
+                    draw_compare(axes[i, j], name, suite, sim, rung, mocks, raw, observed)
+                    title(axes[i, j], suite, rung, observed, mocks, sim)
+                    style(axes[i, j], name, j == 0, i == last)
+            save(fig, out / f'{sub}_vs_raw' / f'{name}_{suite}.png', handles, ncol=4)
+
+    single = out / 'single'
+    for rung in RUNGS:
+        for name in STATS:
+            fig, ax = plt.subplots(figsize=(5.0, 3.6))
+            draw_stat(ax, name, suite, rung, mocks, observed)
+            title(ax, suite, rung, observed, mocks)
+            style(ax, name)
+            save(fig, single / name / f'{suite}_snr-{rung}.png', stat_handles(), ncol=2)
+        for sim in SIMS:
+            fig, ax = plt.subplots(figsize=(5.0, 3.6))
+            draw_bn(ax, suite, sim, rung, mocks, observed)
+            title(ax, suite, rung, observed, mocks, sim)
+            ax.set_xlabel(r'$\log N_{\rm HI}$')
+            ax.set_ylabel(r'$b$ [km s$^{-1}$]')
+            save(fig, single / 'b_N' / f'{suite}_{sim}_snr-{rung}.png')
 
 
 def self_test():
@@ -305,24 +419,31 @@ def self_test():
     assert abs(10 ** f[k] - 10 / ((10 ** 13.75 - 10 ** 13.5) * 2.0)) < 1e-6 * 10 ** f[k]
     assert np.isnan(f[0])
 
-    # Medians from the histograms land within a bin of the true median.
-    u = build_units(['a'], np.zeros(5), np.zeros(5), np.array([10.0, 20.0, 30.0, 40.0, 50.0]),
-                    np.full(5, 13.1), [np.zeros(FLUX_EDGES.size - 1)], [1.0], 13.2)
-    x, m = median_b({k: u[k][0] for k in HIST_KEYS}, 1.0)
-    assert abs(m[np.argmin(np.abs(x - 13.125))] - 30.0) <= 1.0, m
-    assert u['b'].sum() == 0              # below the b floor, kept for the b-N medians only
+    # Lines below the b floor stay out of the b histograms but stay in the b-N plane.
+    u = build_units(['a', 'b'], np.array([0, 0, 1]), np.zeros(3), np.array([20.0, 30.0, 40.0]),
+                    np.array([12.5, 13.5, 13.5]), [np.zeros(FLUX_EDGES.size - 1)] * 2,
+                    [1.0, 1.0], 13.2)
+    assert u['b'].sum() == 2
+    r = evaluate(u, np.array([0]), [np.array([0])])
+    assert r['n'] == 1 and r['bN'][1].tolist() == [20.0, 30.0]
 
-    # One-survey draws take exactly one mock per template.
+    # Every mock is central, and one-survey draws take exactly one mock per template.
     names = np.array(['p', 'q', 'p', 'q', 'r'])
-    central, draws = mock_draws(names, ['p', 'q'], rng, n=20)
-    assert sorted(central) == [0, 1, 2, 3]
-    assert all(sorted(names[d]) == ['p', 'q'] for d in draws)
+    central, draws = mock_draws(names, rng, n=20)
+    assert central.tolist() == [0, 1, 2, 3, 4]
+    assert all(sorted(names[d]) == ['p', 'q', 'r'] for d in draws)
 
     # Rung bins meet at the geometric midpoints and cover every S/N once.
     s = np.array([5.0, 14.0, 14.2, 28.0, 30.0, 56.0, 57.0, 200.0])
     hits = np.array([snr_bin(r, s) for r in RUNGS[1:]])
     assert (hits.sum(axis=0) == 1).all() and hits[0].tolist()[:2] == [True, True]
     assert hits[3].tolist()[-2:] == [True, True]
+
+    # Contour levels enclose at least the requested fractions, the inner one higher.
+    h = np.array([[10.0, 5.0], [3.0, 2.0]])
+    l95, l68 = hpd_levels(h)
+    assert h[h >= l68].sum() >= 0.68 * h.sum() and h[h >= l95].sum() >= 0.95 * h.sum()
+    assert l68 > l95
 
     # CDFs end at 1 and densities integrate to 1.
     counts = rng.integers(0, 10, size=FLUX_EDGES.size - 1).astype(float)
@@ -337,7 +458,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--mock-root', default='output/obs/mock_lines')
-    p.add_argument('--sub', default='', help="mock subdirectory, e.g. 'uvb_match' or 'gauss'")
+    p.add_argument('--sub', default='uvb_match',
+                   help="mock subdirectory, '' for raw tau; anything else is also drawn "
+                        "against raw")
     p.add_argument('--templates', default='data/Obs/*_all.dat')
     p.add_argument('--cos-list', default='data/Obs/cos.list')
     p.add_argument('--z-max', type=float, default=Z_MAX, help='must match the mocks')
@@ -357,39 +480,29 @@ def main():
     ranges = template_ranges(templates, args.cos_list, args.z_max)
     dx = {n: sum(absorption_distance(lo, hi) for lo, hi in r) for n, r in ranges.items()}
     names = np.array([t['name'] for t in templates])
-    snr = np.array([t['snr_pixel'] for t in templates])
+    snr = np.array([t['snr_resel'] for t in templates])
     print(f'{len(templates)} observed sightlines, total dX = {sum(dx.values()):.2f} '
           f'at z <= {args.z_max}')
 
     obs_units = observed_units(templates, ranges, dx, args.b_logn_min)
-    selection, observed = {}, {}
+    observed = {}
     for rung in RUNGS:
         keep = names if rung == 'data' else names[snr_bin(rung, snr)]
         if not keep.size:
             print(f'S/N {rung}: no observed sightline in the bin; using all of them')
             keep = names
-        selection[rung] = keep
         if rung != 'data':
-            print(f'S/N {rung} per pixel: {", ".join(keep)}')
-        central, draws = bootstrap_draws(obs_units['names'], keep, rng)
-        observed[rung] = {**evaluate(obs_units, central, draws), 'n': len(keep)}
+            print(f'S/N {rung} per resel: {", ".join(keep)}')
+        observed[rung] = evaluate(obs_units, *bootstrap_draws(obs_units['names'], keep, rng))
+        observed[rung]['n'] = len(keep)
 
-    mocks = {}
+    mocks = load_mocks(args.mock_root, args.sub, ranges, dx, args.b_logn_min, rng)
+    raw = load_mocks(args.mock_root, '', ranges, dx, args.b_logn_min, rng) if args.sub else {}
     for suite in SUITES:
-        for sim in SIMS:
-            base = Path(args.mock_root) / suite / sim / args.sub
-            for rung in RUNGS:
-                lines = base / f'mock_lines_snr-{rung}.csv'
-                sightlines = base / f'mock_sightlines_snr-{rung}.csv'
-                if not (lines.exists() and sightlines.exists()):
-                    print(f'missing: {lines}')
-                    continue
-                units = mock_units(lines, sightlines, ranges, dx, args.b_logn_min)
-                central, draws = mock_draws(units['names'], selection[rung], rng)
-                mocks[(suite, sim, rung)] = evaluate(units, central, draws)
-
-    for name in STATS:
-        plot_stat(name, mocks, observed, args.out)
+        if any(k[0] == suite for k in mocks):
+            plot_suite(suite, mocks, raw, observed, Path(args.out), args.sub)
+        else:
+            print(f'{suite}: no mocks, skipped')
     return 0
 
 

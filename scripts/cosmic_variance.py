@@ -41,6 +41,7 @@ from feedback_robustness import ratio, _obs_style, DEFAULT_SNAPS, COSMO_SCANS
 
 # CV_2, CV_8, CV_17 ran Arepo commit fc131931 (2021); the other CV runs, 1P and EX ran 4ab97a2c (2016).
 CV_SIMS = [f'CV_{i}' for i in range(27)]
+CV_2021 = ('CV_2', 'CV_8', 'CV_17')
 EVO_OBS = ('tau_eff', 'mean_flux')
 
 

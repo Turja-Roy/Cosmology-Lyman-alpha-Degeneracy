@@ -591,7 +591,7 @@ def overlap_rows(suite, label, mocks, cv):
     return rows
 
 
-def write_overlap(path, rows):
+def write_overlap(path, rows, suite):
     if not rows:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -601,7 +601,7 @@ def write_overlap(path, rows):
         w.writerows(rows)
     print(f'  saved {path}')
     first = rows[0]['mocks']
-    print(f'  {first}, observed errors, 1 sigma: fraction of bins inside the band of')
+    print(f'  {suite} {first}, observed errors, 1 sigma: fraction of bins inside the band of')
     for name in PANEL:
         for a in SIMS:
             got = [f"{r['curve_of']} {r['frac_inside']:.2f}" for r in rows
@@ -760,7 +760,8 @@ def main():
             sets.append(('raw', '--', raw, raw_cv))
         plot_cv_ratio(suite, sets, out)
         write_overlap(out / f'overlap_{suite}.csv',
-                      [r for label, _, m, c in sets for r in overlap_rows(suite, label, m, c)])
+                      [r for label, _, m, c in sets for r in overlap_rows(suite, label, m, c)],
+                      suite)
     return 0
 
 

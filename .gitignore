@@ -14,6 +14,7 @@ build/
 /spectra
 data/IllustrisTNG
 data/SIMBA
+data/Obs
 
 # Notes and reading materials
 *.md

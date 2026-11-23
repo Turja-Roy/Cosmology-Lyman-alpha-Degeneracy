@@ -36,6 +36,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hypothesis_test_p1 import load_snap_row, _setup_style, _save   # noqa: E402
 from degeneracy_test import _obs_extractors                        # noqa: E402
+from feedback_robustness import _obs_grid                          # noqa: E402
 from cosmic_variance import CV_SIMS                                # noqa: E402
 from ex_snr_plots import COLOURS, CV_SKIP, SUITES                  # noqa: E402
 from mock_lines_report import SIMS                                 # noqa: E402

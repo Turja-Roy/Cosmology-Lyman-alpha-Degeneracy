@@ -27,6 +27,11 @@ the survey band alone, and the legend says which. Observation: bootstrap of sigh
 The EX models share initial conditions, so the differences between them carry no cosmic
 variance; the CV band asks whether one box could tell them apart against data.
 
+With --separate-cv the simulation bands are the survey scatter alone, and the CV set is drawn
+on its own, hatched: mean over the boxes +-1 (2) sigma_CV in the plotted quantity. Each box
+curve pools all its mocks (five per template), so sigma_CV keeps a sampling floor of about
+sigma_survey / sqrt(5) even without cosmic variance.
+
 Output, per suite with mocks:
     panel_<suite>.png                rows S/N, columns CDDF | flux PDF | b PDF
     b_N_plane_<suite>.png            rows S/N, columns EX models; every line as a point,
@@ -40,6 +45,7 @@ Output, per suite with mocks:
 
     python scripts/ex_snr_plots.py                     # uvb_match, compared to raw
     python scripts/ex_snr_plots.py --sub '' --out plots/obs/ex_snr_raw
+    python scripts/ex_snr_plots.py --separate-cv --out plots/obs/ex_cv_separate
     python scripts/ex_snr_plots.py --self-test
 """
 
@@ -78,6 +84,8 @@ BN_EDGES = np.arange(12.5, 15.5 + 1e-9, 0.25)
 HIST_KEYS = ('logN', 'b', 'bN', 'flux')
 N_DRAWS = 200
 LEVELS = {'1sigma': (16, 84), '2sigma': (2.5, 97.5)}
+N_SIGMA = {'1sigma': 1, '2sigma': 2}
+CV_COLOUR = '#7a3e9d'
 CV_SKIP = {'IllustrisTNG': CV_2021}
 
 
@@ -203,13 +211,14 @@ def evaluate(units, central, draws, shifts=None):
 def cv_summary(box_curves):
     """Per statistic, each CV box's offset from the mean over boxes, and the std over boxes,
     in the plotted quantity."""
-    out = {'n': len(box_curves), 'x': {}, 'shift': {}, 'sigma': {}}
+    out = {'n': len(box_curves), 'x': {}, 'mean': {}, 'shift': {}, 'sigma': {}}
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', RuntimeWarning)
         for s in STATS:
             y = np.array([to_plot(s, c[s][1]) for c in box_curves])
             out['x'][s] = box_curves[0][s][0]
-            out['shift'][s] = y - np.nanmean(y, axis=0)
+            out['mean'][s] = np.nanmean(y, axis=0)
+            out['shift'][s] = y - out['mean'][s]
             out['sigma'][s] = np.nanstd(y, axis=0, ddof=1)
     return out
 
@@ -321,7 +330,7 @@ def load_cv(root, suite, sub, ranges, dx, b_logn_min):
     return out
 
 
-def load_mocks(root, sub, ranges, dx, b_logn_min, rng):
+def load_mocks(root, sub, ranges, dx, b_logn_min, rng, mix_cv=True):
     mocks, cv = {}, {}
     for suite in SUITES:
         cv[suite] = load_cv(root, suite, sub, ranges, dx, b_logn_min)
@@ -337,7 +346,7 @@ def load_mocks(root, sub, ranges, dx, b_logn_min, rng):
                 central, draws = mock_draws(units['names'], rng)
                 c = cv[suite].get(rung)
                 shifts = None
-                if c:
+                if c and mix_cv:
                     pick = rng.integers(c['n'], size=len(draws))
                     shifts = {s: c['shift'][s][pick] for s in STATS}
                 mocks[(suite, sim, rung)] = evaluate(units, central, draws, shifts)
@@ -381,7 +390,14 @@ def draw_observed(ax, name, rung, observed, level):
     ax.plot(x, y, color='k', lw=1.8)
 
 
-def draw_stat(ax, name, suite, rung, mocks, observed, level):
+def draw_cv(ax, name, c, k):
+    x, m, s = c['x'][name], c['mean'][name], c['sigma'][name]
+    ax.fill_between(x, from_plot(name, m - k * s), from_plot(name, m + k * s),
+                    facecolor='none', edgecolor=CV_COLOUR, hatch='////', lw=0)
+    ax.plot(x, from_plot(name, m), color=CV_COLOUR, lw=1.2, ls=':')
+
+
+def draw_stat(ax, name, suite, rung, mocks, observed, level, cv_band=None):
     for sim in SIMS:
         r = mocks.get((suite, sim, rung))
         if r is None:
@@ -390,6 +406,8 @@ def draw_stat(ax, name, suite, rung, mocks, observed, level):
         lo, hi = r['band'][level][name]
         ax.fill_between(x, lo, hi, color=COLOURS[sim], alpha=0.18, lw=0)
         ax.plot(x, y, color=COLOURS[sim], lw=1.5)
+    if cv_band and rung in cv_band:
+        draw_cv(ax, name, cv_band[rung], N_SIGMA[level])
     draw_observed(ax, name, rung, observed, level)
 
 
@@ -420,10 +438,12 @@ def draw_bn(ax, suite, sim, rung, mocks, observed):
     ax.grid(alpha=0.2, lw=0.5)
 
 
-def band_note(cv, suite, level):
+def band_note(cv, suite, level, separate=False):
     lo, hi = LEVELS[level]
     have = cv.get(suite, {})
-    if have:
+    if separate:
+        what = 'survey only'
+    elif have:
         n = '/'.join(sorted({str(c['n']) for c in have.values()}))
         what = f'survey + cosmic variance ({n} CV boxes)'
         missing = [r for r in RUNGS if r not in have]
@@ -434,13 +454,20 @@ def band_note(cv, suite, level):
     return f'shaded: {what}, {lo:g}-{hi:g}%'
 
 
-def stat_handles(note=None):
+def cv_handles(cv, suite, level):
+    n = '/'.join(sorted({str(c['n']) for c in cv.get(suite, {}).values()}))
+    return [Line2D([], [], color=CV_COLOUR, lw=1.2, ls=':', label=f'CV mean, {n} boxes'),
+            Patch(facecolor='none', edgecolor=CV_COLOUR, hatch='////',
+                  label=rf'hatched: CV mean $\pm{N_SIGMA[level]}\sigma_{{\rm CV}}$')]
+
+
+def stat_handles(note=None, extra=()):
     h = [Line2D([], [], color=COLOURS[s], lw=1.5, label=f'{s} {SIMS[s]}') for s in SIMS]
     h += [Line2D([], [], color='k', lw=1.8, label='observed, S/N-matched'),
           Line2D([], [], color='0.35', lw=1.0, ls='--', label='observed, all')]
     if note:
         h.append(Patch(color='0.6', alpha=0.4, label=note))
-    return h
+    return h + list(extra)
 
 
 def save(fig, path, handles=None, ncol=3):
@@ -460,19 +487,21 @@ def grid(ncols, width):
     return plt.subplots(len(RUNGS), ncols, figsize=(width, 2.5 * len(RUNGS)), squeeze=False)
 
 
-def plot_suite(suite, mocks, raw, observed, out, sub, cv, level):
+def plot_suite(suite, mocks, raw, observed, out, sub, cv, level, separate=False):
     """The band figures at one LEVELS width; the b-N plane, which has no band, only at 1 sigma."""
     last = len(RUNGS) - 1
-    note = band_note(cv, suite, level)
+    note = band_note(cv, suite, level, separate)
     with_bn = level == '1sigma'
+    cv_band = cv.get(suite) if separate else None
+    band_handles = stat_handles(note, cv_handles(cv, suite, level) if cv_band else ())
 
     fig, axes = grid(len(PANEL), 4.0 * len(PANEL))
     for i, rung in enumerate(RUNGS):
         for j, name in enumerate(PANEL):
-            draw_stat(axes[i, j], name, suite, rung, mocks, observed, level)
+            draw_stat(axes[i, j], name, suite, rung, mocks, observed, level, cv_band)
             title(axes[i, j], suite, rung, observed, mocks)
             style(axes[i, j], name, True, i == last)
-    save(fig, out / f'panel_{suite}.png', stat_handles(note))
+    save(fig, out / f'panel_{suite}.png', band_handles)
 
     if with_bn:
         bn_handles = [Line2D([], [], color=COLOURS[s], marker='.', lw=1.2,
@@ -508,10 +537,10 @@ def plot_suite(suite, mocks, raw, observed, out, sub, cv, level):
     for rung in RUNGS:
         for name in STATS:
             fig, ax = plt.subplots(figsize=(5.0, 3.6))
-            draw_stat(ax, name, suite, rung, mocks, observed, level)
+            draw_stat(ax, name, suite, rung, mocks, observed, level, cv_band)
             title(ax, suite, rung, observed, mocks)
             style(ax, name)
-            save(fig, single / name / f'{suite}_snr-{rung}.png', stat_handles(note), ncol=2)
+            save(fig, single / name / f'{suite}_snr-{rung}.png', band_handles, ncol=2)
         if not with_bn:
             continue
         for sim in SIMS:
@@ -689,6 +718,8 @@ def self_test():
     boxes = [{s: (np.arange(3.0), np.full(3, v)) for s in STATS} for v in (1.0, 2.0, 3.0)]
     c = cv_summary(boxes)
     assert c['n'] == 3 and np.allclose(c['shift']['cddf'][:, 0], [-1.0, 0.0, 1.0])
+    assert np.allclose(c['mean']['cddf'], 2.0)
+    assert np.allclose(c['mean']['flux_pdf'], np.mean(np.log10([1.0, 2.0, 3.0])))
     assert np.allclose(c['sigma']['cddf'], 1.0)
     assert np.allclose(c['sigma']['flux_pdf'], np.std(np.log10([1.0, 2.0, 3.0]), ddof=1))
 
@@ -714,6 +745,8 @@ def main():
                    help='log N floor for the b PDF and CDF')
     p.add_argument('--out', default='plots/obs/ex_snr')
     p.add_argument('--seed', type=int, default=0)
+    p.add_argument('--separate-cv', action='store_true',
+                   help='survey-only model bands, CV scatter drawn as its own band')
     p.add_argument('--self-test', action='store_true')
     args = p.parse_args()
 
@@ -743,8 +776,9 @@ def main():
         observed[rung] = evaluate(obs_units, *bootstrap_draws(obs_units['names'], keep, rng))
         observed[rung]['n'] = len(keep)
 
-    mocks, cv = load_mocks(args.mock_root, args.sub, ranges, dx, args.b_logn_min, rng)
-    raw, raw_cv = (load_mocks(args.mock_root, '', ranges, dx, args.b_logn_min, rng)
+    mix = not args.separate_cv
+    mocks, cv = load_mocks(args.mock_root, args.sub, ranges, dx, args.b_logn_min, rng, mix)
+    raw, raw_cv = (load_mocks(args.mock_root, '', ranges, dx, args.b_logn_min, rng, mix)
                    if args.sub else ({}, {}))
     out = Path(args.out)
     for suite in SUITES:
@@ -753,7 +787,7 @@ def main():
             continue
         for level in LEVELS:
             plot_suite(suite, mocks, raw, observed, out if level == '1sigma' else out / level,
-                       args.sub, cv, level)
+                       args.sub, cv, level, args.separate_cv)
         sets = [(args.sub or 'raw', '-', mocks, cv)]
         if raw:
             sets.append(('raw', '--', raw, raw_cv))

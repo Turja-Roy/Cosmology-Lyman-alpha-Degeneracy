@@ -444,12 +444,11 @@ def stat_handles(note=None):
 
 
 def save(fig, path, handles=None, ncol=3):
+    fig.tight_layout()
     if handles:
-        fig.legend(handles=handles, loc='upper center', ncol=ncol, fontsize=8, frameon=False,
+        # Above the figure, whatever its height; bbox_inches='tight' grows the canvas to fit.
+        fig.legend(handles=handles, loc='lower center', ncol=ncol, fontsize=8, frameon=False,
                    bbox_to_anchor=(0.5, 1.0))
-        fig.tight_layout(rect=(0, 0, 1, 0.95))
-    else:
-        fig.tight_layout()
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=150, bbox_inches='tight')
